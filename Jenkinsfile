@@ -31,8 +31,6 @@ pipeline {
 
                         echo "$DOCKER_PASS" | /usr/local/bin/docker login -u "$DOCKER_USER" --password-stdin
 
-                        pwd
-
                         /usr/local/bin/docker build -f ./build/Dockerfile -t $DOCKER_IMAGE:latest .
                         /usr/local/bin/docker push $DOCKER_IMAGE:latest
 
