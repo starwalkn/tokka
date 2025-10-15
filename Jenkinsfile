@@ -23,8 +23,16 @@ pipeline {
 
                         echo "$DOCKER_PASS" | /usr/local/bin/docker login -u "$DOCKER_USER" --password-stdin
 
-                        DOCKER_BUILDKIT=1 /usr/local/bin/docker build --platform linux/amd64 -f ./build/Dockerfile \
-                        -t $DOCKER_IMAGE:latest .
+                        /usr/local/bin/docker buildx version || (echo "🚨 Buildx not found!" && exit 1)
+
+                        /usr/local/bin/docker buildx create --use --name multiarch-builder || true
+                        /usr/local/bin/docker buildx inspect --bootstrap
+
+                        /usr/local/bin/docker buildx build \
+                            --platform linux/amd64,linux/arm64 \
+                            -f ./build/Dockerfile \
+                            -t starwalkn/kairyu:latest \
+                            --push .
                         /usr/local/bin/docker push $DOCKER_IMAGE:latest
 
                         rm -rf $DOCKER_CONFIG
