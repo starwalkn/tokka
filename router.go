@@ -11,12 +11,31 @@ import (
 	"github.com/starwalkn/kairyu/internal/logger"
 )
 
+type DynamicRouter struct{}
+
+func (d *DynamicRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	rt := GetRouter()
+	rt.ServeHTTP(w, r)
+}
+
 type Router struct {
 	dispatcher dispatcher
 	aggregator aggregator
 	Routes     []Route
 
 	log *zap.Logger
+}
+
+func GetRouter() *Router {
+	if r := currentRouter.Load(); r != nil {
+		return r.(*Router)
+	}
+
+	return nil
+}
+
+func SetRouter(r *Router) {
+	currentRouter.Store(r)
 }
 
 func NewRouter(cfgs []RouteConfig) *Router {
@@ -38,14 +57,14 @@ func NewRouter(cfgs []RouteConfig) *Router {
 		// --- plugins ---
 		plugins := make([]Plugin, 0, len(cfg.Plugins))
 		for _, pcfg := range cfg.Plugins {
-			p := createPlugin(pcfg.Name)
-			if p == nil {
-				log.Printf("plugin %s not found", pcfg.Name)
+			soPlugin := loadPluginFromSO(pcfg.Path)
+			if soPlugin == nil {
+				log.Printf("plugin %s failed to load from .so", pcfg.Name)
 				continue
 			}
 
-			p.Init(pcfg.Config)
-			plugins = append(plugins, p)
+			soPlugin.Init(pcfg.Config)
+			plugins = append(plugins, soPlugin)
 		}
 
 		// --- route ---
@@ -61,11 +80,13 @@ func NewRouter(cfgs []RouteConfig) *Router {
 		routes = append(routes, route)
 	}
 
+	log := logger.Init(true)
+
 	return &Router{
-		dispatcher: &defaultDispatcher{},
-		aggregator: &defaultAggregator{},
+		dispatcher: &defaultDispatcher{log: log.Named("dispatcher")},
+		aggregator: &defaultAggregator{log: log.Named("aggregator")},
 		Routes:     routes,
-		log:        logger.Init(true),
+		log:        log.Named("router"),
 	}
 }
 
@@ -100,8 +121,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	rt := r.Match(req)
 	if rt == nil {
 		r.log.Error("no route found", zap.String("request_uri", req.URL.RequestURI()))
-
 		http.Error(w, "404 page not found", http.StatusNotFound)
+
 		return
 	}
 
@@ -116,17 +137,26 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Route:   rt,
 		}
 
+		r.log.Debug("executing request plugin", zap.String("name", p.Name()))
+
 		p.Execute(pctx)
 
 		if pctx.Response != nil && pctx.Response.StatusCode == http.StatusTooManyRequests {
+			r.log.Warn("too many requests", zap.String("request_uri", req.URL.RequestURI()))
 			copyResponse(w, pctx.Response)
+
 			return
 		}
 	}
 
 	// --- 2. Backend dispatch ---
 	responses := r.dispatcher.dispatch(rt, req)
+
+	r.log.Debug("dispatched responses", zap.Any("responses", responses))
+
 	aggregated := r.aggregator.aggregate(responses, "merge")
+
+	r.log.Debug("aggregated responses", zap.Any("aggregated", aggregated))
 
 	// --- 3. Response-phase plugins ---
 	resp := &http.Response{
@@ -146,6 +176,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
+		r.log.Debug("executing response plugin", zap.String("name", p.Name()))
+
 		p.Execute(pctx)
 	}
 
@@ -154,7 +186,19 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) Match(req *http.Request) *Route {
-	return &r.Routes[0]
+	for _, route := range r.Routes {
+		if route.Method != "" && route.Method != req.Method {
+			continue
+		}
+
+		if route.Path != "" && req.URL.Path != route.Path {
+			continue
+		}
+
+		return &route
+	}
+
+	return nil
 }
 
 func copyResponse(w http.ResponseWriter, resp *http.Response) {

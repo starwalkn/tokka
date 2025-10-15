@@ -1,96 +1,51 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/starwalkn/kairyu"
 	"github.com/starwalkn/kairyu/admin"
+
+	_ "github.com/starwalkn/kairyu/internal/plugin/ratelimit"
 )
 
 func main() {
-	data, err := os.ReadFile("kairyu.json")
-	if err != nil {
-		log.Fatal("failed to read config:", err)
-	}
+	cfg := kairyu.LoadConfig(os.Getenv("KAIRYU_CONFIG"))
 
-	var cfg kairyu.GatewayConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Fatal("failed to parse config:", err)
-	}
+	kairyu.SetRouter(kairyu.NewRouter(cfg.Routes))
 
-	router := kairyu.NewRouter(cfg.Routes)
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 
-	addr := ":8080"
-	fmt.Println("🚀 Kairyu API Gateway started at", addr)
-	PrintConfig(cfg)
+	printConfig(cfg)
 
-	go admin.StartAdminServer(&cfg, cfg.Server.Port+1)
+	go admin.StartServer(&cfg)
+	go watchReloadSignal(os.Getenv("KAIRYU_CONFIG"))
 
-	if err := http.ListenAndServe(addr, router); err != nil {
+	if err := http.ListenAndServe(addr, &kairyu.DynamicRouter{}); err != nil {
 		log.Fatal(err)
 	}
 }
 
-var dashboardHTML = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<title>Kairyu Dashboard</title>
-	<style>
-		body {
-			font-family: Inter, sans-serif;
-			background: #0d1117;
-			color: #c9d1d9;
-			margin: 0;
-			padding: 0;
-		}
-		header {
-			background: #161b22;
-			padding: 1rem 2rem;
-			font-size: 1.2rem;
-			border-bottom: 1px solid #30363d;
-		}
-		main {
-			padding: 2rem;
-		}
-		pre {
-			background: #161b22;
-			border-radius: 10px;
-			padding: 1rem;
-			overflow-x: auto;
-			color: #58a6ff;
-		}
-	</style>
-</head>
-<body>
-	<header>
-		Kairyu 🐉 Dashboard
-	</header>
-	<main>
-		<h2>Current Configuration</h2>
-		<pre id="config">Loading...</pre>
-	</main>
-	<script>
-		fetch('/api/config')
-			.then(res => res.json())
-			.then(cfg => {
-				document.getElementById('config').textContent = JSON.stringify(cfg, null, 2);
-			})
-			.catch(err => {
-				document.getElementById('config').textContent = 'Failed to load configuration: ' + err;
-			});
-	</script>
-</body>
-</html>
-`
+func watchReloadSignal(configPath string) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGHUP)
 
-func PrintConfig(cfg kairyu.GatewayConfig) {
+	for {
+		<-sigs
+		log.Println("🔄 Reload signal received")
+		if err := kairyu.ReloadConfig(configPath); err != nil {
+			log.Println("Failed to reload config:", err)
+		}
+	}
+}
+
+func printConfig(cfg kairyu.GatewayConfig) {
+	fmt.Println("🚀 Kairyu API Gateway started at\n", fmt.Sprintf(":%d", cfg.Server.Port))
 	fmt.Printf("\n🚀 Loaded Kairyu Gateway configuration:\n")
 	fmt.Printf("────────────────────────────────────────────\n")
 	fmt.Printf("Name:    %s\n", cfg.Name)

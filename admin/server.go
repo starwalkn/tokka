@@ -9,21 +9,25 @@ import (
 	"github.com/starwalkn/kairyu"
 )
 
-func StartAdminServer(cfg *kairyu.GatewayConfig, port int) {
+func StartServer(cfg *kairyu.GatewayConfig) {
+	if !cfg.AdminPanel.Enable {
+		fmt.Printf("📊 Admin dashboard disabled\n")
+		return
+	}
+
 	mux := http.NewServeMux()
 
-	// Отдаём конфиг как JSON
 	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(cfg)
 	})
 
-	// Отдаём статические файлы (index.html, css, js)
-	staticDir := filepath.Join(".", "admin", "static")
+	staticDir := filepath.Join("/", "app", "admin", "static")
 	fs := http.FileServer(http.Dir(staticDir))
 	mux.Handle("/", fs)
 
-	addr := fmt.Sprintf(":%d", port)
+	addr := fmt.Sprintf(":%d", cfg.AdminPanel.Port)
 	fmt.Printf("📊 Admin dashboard available at http://localhost%s\n", addr)
+
 	go http.ListenAndServe(addr, mux)
 }

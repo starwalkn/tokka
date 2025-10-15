@@ -1,0 +1,10 @@
+{
+  "name": "kairyu-admin",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2"
+  }
+}

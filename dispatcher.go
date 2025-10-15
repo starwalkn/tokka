@@ -4,13 +4,17 @@ import (
 	"io"
 	"net/http"
 	"sync"
+
+	"go.uber.org/zap"
 )
 
 type dispatcher interface {
 	dispatch(route *Route, original *http.Request) [][]byte
 }
 
-type defaultDispatcher struct{}
+type defaultDispatcher struct {
+	log *zap.Logger
+}
 
 func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) [][]byte {
 	var wg sync.WaitGroup
@@ -33,6 +37,8 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) [][]b
 			if err != nil {
 				return
 			}
+
+			d.log.Info("dispatching request", zap.String("method", m), zap.String("url", req.URL.String()))
 
 			resp, err := client.Do(req)
 			if err != nil {

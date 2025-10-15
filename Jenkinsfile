@@ -14,14 +14,6 @@ pipeline {
             }
         }
 
-        stage('Build Go binary') {
-            steps {
-                sh 'mkdir -p build'
-                sh '/opt/homebrew/bin/go mod tidy'
-                sh '/opt/homebrew/bin/go build -o build/kairyu ./cmd/main.go'
-            }
-        }
-
         stage('Docker Build & Push') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
