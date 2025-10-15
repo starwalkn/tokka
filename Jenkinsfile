@@ -25,7 +25,7 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh """
+                    sh '''
                         export DOCKER_CONFIG=$WORKSPACE/.docker
                         mkdir -p $DOCKER_CONFIG
 
@@ -34,7 +34,7 @@ pipeline {
                         /usr/local/bin/docker push $DOCKER_IMAGE:latest
 
                         rm -rf $DOCKER_CONFIG
-                    """
+                    '''
                 }
             }
         }
