@@ -4,7 +4,7 @@ FROM golang:1.23-alpine AS builder
 WORKDIR /src
 
 COPY . .
-RUN go build -o /bin/kairyu ./cmd/main
+RUN go build -o /bin/kairyu ./cmd/main.go
 
 FROM alpine:3.20
 COPY --from=builder /kairyu /usr/local/bin/kairyu
