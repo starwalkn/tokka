@@ -23,19 +23,21 @@ type ServerConfig struct {
 	Port    int `json:"port" yaml:"port"`
 	Timeout int `json:"timeout" yaml:"timeout"`
 }
+
 type DashboardConfig struct {
 	Enable bool `json:"enable" yaml:"enable"`
 	Port   int  `json:"port" yaml:"port"`
 }
 
 type RouteConfig struct {
-	Path        string             `json:"path" yaml:"path"`
-	Method      string             `json:"method" yaml:"method"`
-	Plugins     []PluginConfig     `json:"plugins" yaml:"plugins"`
-	Middlewares []MiddlewareConfig `json:"middlewares" yaml:"middlewares"`
-	Backends    []BackendConfig    `json:"backends" yaml:"backends"`
-	Aggregate   string             `json:"aggregate" yaml:"aggregate"`
-	Transform   string             `json:"transform" yaml:"transform"`
+	Path                string             `json:"path" yaml:"path"`
+	Method              string             `json:"method" yaml:"method"`
+	Plugins             []PluginConfig     `json:"plugins" yaml:"plugins"`
+	Middlewares         []MiddlewareConfig `json:"middlewares" yaml:"middlewares"`
+	Backends            []BackendConfig    `json:"backends" yaml:"backends"`
+	Aggregate           string             `json:"aggregate" yaml:"aggregate"`
+	Transform           string             `json:"transform" yaml:"transform"`
+	AllowPartialResults bool               `json:"allow_partial_results" yaml:"allow_partial_results"`
 }
 
 type BackendConfig struct {

@@ -31,7 +31,7 @@ func (p *Middleware) Init(cfg map[string]interface{}) error {
 		p.enabled = val
 	}
 
-	p.log = logger.Init(true)
+	p.log = logger.New(true)
 
 	return nil
 }

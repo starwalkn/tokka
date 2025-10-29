@@ -80,7 +80,7 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) [][]b
 			}
 			req.URL.RawQuery = q.Encode()
 
-			// TODO:: implement headers pattern aka "X-*" (forward all headers which starts with X-).
+			// TODO:: implement headers pattern aka "X-*" (forward all headers which starts with 'X-').
 			// Set forwarding headers.
 			for _, fw := range b.ForwardHeaders {
 				if fw == "*" {

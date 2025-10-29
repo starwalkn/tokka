@@ -2,7 +2,7 @@ package logger
 
 import "go.uber.org/zap"
 
-func Init(debug bool) *zap.Logger {
+func New(debug bool) *zap.Logger {
 	var log *zap.Logger
 	var err error
 	if debug {

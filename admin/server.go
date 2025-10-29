@@ -19,7 +19,7 @@ type Server struct {
 func NewServer(cfg *bravka.GatewayConfig) *Server {
 	return &Server{
 		cfg: cfg,
-		log: logger.Init(true).Named("admin-panel"),
+		log: logger.New(true).Named("admin-panel"),
 	}
 }
 

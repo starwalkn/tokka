@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"net/http"
-	"os"
 	"slices"
 
 	"go.uber.org/zap"
@@ -21,7 +20,7 @@ type Router struct {
 }
 
 func NewRouter(cfgs []RouteConfig) *Router {
-	log := logger.Init(true)
+	log := logger.New(true)
 
 	var (
 		router = &Router{
@@ -105,13 +104,14 @@ func NewRouter(cfgs []RouteConfig) *Router {
 
 		// --- route ---
 		route := Route{
-			Path:        cfg.Path,
-			Method:      cfg.Method,
-			Backends:    backends,
-			Aggregate:   cfg.Aggregate,
-			Transform:   cfg.Transform,
-			Plugins:     plugins,
-			Middlewares: middlewares,
+			Path:                cfg.Path,
+			Method:              cfg.Method,
+			Backends:            backends,
+			Aggregate:           cfg.Aggregate,
+			Transform:           cfg.Transform,
+			AllowPartialResults: cfg.AllowPartialResults,
+			Plugins:             plugins,
+			Middlewares:         middlewares,
 		}
 
 		routes = append(routes, route)
@@ -123,13 +123,14 @@ func NewRouter(cfgs []RouteConfig) *Router {
 }
 
 type Route struct {
-	Path        string
-	Method      string
-	Backends    []Backend
-	Aggregate   string
-	Transform   string
-	Plugins     []Plugin
-	Middlewares []Middleware
+	Path                string
+	Method              string
+	Backends            []Backend
+	Aggregate           string
+	Transform           string
+	AllowPartialResults bool
+	Plugins             []Plugin
+	Middlewares         []Middleware
 }
 
 type Backend struct {
@@ -144,17 +145,16 @@ type Backend struct {
 /*
 ServeHTTP is the incoming requests pipeline:
 
-	ServeHTTP()
-	 ├─ Match(req)
-	 ├─ RunPlugins(PluginTypeRequest)
-	 │    └─ могут вернуть Response (rate limit, auth)
-	 ├─ Dispatch()
-	 ├─ Aggregate()
-	 ├─ RunPlugins(PluginTypeResponse)
-	 └─ WriteResponse()
+	├─ execute middlewares
+	├─ match route
+	├─ execute request plugins
+	├─ dispatch backends
+	├─ aggregate response
+	├─ execute response plugins
+	└─ write response
 */
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	rt := r.Match(req)
+	rt := r.match(req)
 	if rt == nil {
 		r.log.Error("no route found", zap.String("request_uri", req.URL.RequestURI()))
 		http.Error(w, "404 page not found", http.StatusNotFound)
@@ -163,15 +163,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var routeHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		pctx := &Context{
+			Request: req,
+			Route:   rt,
+		}
+
 		// --- 1. Request-phase plugins ---
 		for _, p := range rt.Plugins {
 			if p.Type() != PluginTypeRequest {
 				continue
-			}
-
-			pctx := &Context{
-				Request: req,
-				Route:   rt,
 			}
 
 			r.log.Debug("executing request plugin", zap.String("name", p.Name()))
@@ -191,9 +191,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 		r.log.Debug("dispatched responses", zap.Any("responses", responses))
 
-		aggregated := r.aggregator.aggregate(responses, os.Getenv("bravka_AGGREGATOR"))
+		aggregated := r.aggregator.aggregate(responses, rt.Aggregate, rt.AllowPartialResults)
 
-		r.log.Debug("aggregated responses", zap.Any("aggregated", aggregated))
+		r.log.Debug("aggregated responses",
+			zap.String("strategy", rt.Aggregate),
+			zap.Any("aggregated", aggregated),
+		)
 
 		// --- 3. Response-phase plugins ---
 		resp := &http.Response{
@@ -202,11 +205,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Header:     make(http.Header),
 		}
 
-		pctx := &Context{
-			Request:  req,
-			Response: resp,
-			Route:    rt,
-		}
+		pctx.Response = resp
 
 		for _, p := range rt.Plugins {
 			if p.Type() != PluginTypeResponse {
@@ -229,7 +228,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	routeHandler.ServeHTTP(w, req)
 }
 
-func (r *Router) Match(req *http.Request) *Route {
+func (r *Router) match(req *http.Request) *Route {
 	for _, route := range r.Routes {
 		if route.Method != "" && route.Method != req.Method {
 			continue

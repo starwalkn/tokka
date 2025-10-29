@@ -7,9 +7,17 @@ import (
 	"github.com/starwalkn/bravka"
 )
 
+//nolint:gochecknoinits // architectural solution
 func init() {
 	bravka.RegisterCorePlugin("ratelimit", NewPlugin)
 }
+
+const (
+	defLimit  = 60
+	defWindow = 60
+
+	tickerDur = 10 * time.Second
+)
 
 type Plugin struct {
 	limit   int
@@ -27,8 +35,8 @@ func NewPlugin() bravka.CorePlugin {
 func (p *Plugin) Name() string { return "ratelimit" }
 
 func (p *Plugin) Init(cfg map[string]interface{}) error {
-	p.limit = intFrom(cfg, "limit", 60)                                // лимит на минуту
-	p.window = time.Duration(intFrom(cfg, "window", 60)) * time.Second // окно
+	p.limit = intFrom(cfg, "limit", defLimit)
+	p.window = time.Duration(intFrom(cfg, "window", defWindow)) * time.Second
 	p.counter = make(map[string]int)
 	p.reset = make(map[string]time.Time)
 	p.stopCh = make(chan struct{})
@@ -38,7 +46,7 @@ func (p *Plugin) Init(cfg map[string]interface{}) error {
 
 func (p *Plugin) Start() error {
 	go func() {
-		ticker := time.NewTicker(time.Second * 10)
+		ticker := time.NewTicker(tickerDur)
 		defer ticker.Stop()
 		for {
 			select {
