@@ -39,6 +39,8 @@ jobs:
 
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v4
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
@@ -61,7 +63,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ../../
+          context: .
           file: build/Dockerfile
           platforms: linux/amd64
           github-token: ${{ github.token }}
