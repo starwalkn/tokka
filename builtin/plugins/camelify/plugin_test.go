@@ -1,4 +1,4 @@
-package camelify
+package main
 
 import "testing"
 

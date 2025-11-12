@@ -1,4 +1,4 @@
-package snakeify
+package main
 
 import (
 	"bytes"

@@ -15,7 +15,7 @@ FROM gcr.io/distroless/base-debian12 AS runtime
 
 WORKDIR /app
 
-COPY --from=builder /app/build/bravka /bin/bravka
+COPY --from=builder /app/.bin/bravka /bin/bravka
 COPY --from=builder /app/build/plugins /bravka/plugins
 COPY --from=builder /app/build/middlewares /bravka/middlewares
 
