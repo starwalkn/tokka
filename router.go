@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"time"
 
 	"go.uber.org/zap"
 
@@ -238,8 +237,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var routeHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		start := time.Now()
-
 		tctx := newContext(req, rt)
 
 		// --- 1. Request-phase plugins ---
@@ -281,12 +278,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			r.log.Debug("executing response plugin", zap.String("name", p.Name()))
 
 			p.Execute(tctx)
-		}
-
-		if m := getActiveCorePlugin("metrics"); m != nil { //nolint:nolintlint,nestif
-			if metrics, ok := m.(contract.Metrics); ok {
-				metrics.ObserveRequest(rt.Method, rt.Path, time.Since(start), resp.StatusCode)
-			}
 		}
 
 		// --- 4. Write final output ---
