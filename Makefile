@@ -29,3 +29,6 @@ lint:
 
 test:
 	go test -v -coverprofile=coverage.out ./...
+
+compose:
+	COMPOSE_BAKE=true docker compose up -d --build

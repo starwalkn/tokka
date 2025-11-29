@@ -2,10 +2,6 @@ package tokka
 
 import "sync"
 
-type RateLimit interface {
-	Allow(key string) bool
-}
-
 type CorePlugin interface {
 	Name() string
 	Init(cfg map[string]interface{}) error

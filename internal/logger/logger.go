@@ -3,8 +3,11 @@ package logger
 import "go.uber.org/zap"
 
 func New(debug bool) *zap.Logger {
-	var log *zap.Logger
-	var err error
+	var (
+		log *zap.Logger
+		err error
+	)
+
 	if debug {
 		log, err = zap.NewDevelopment()
 	} else {

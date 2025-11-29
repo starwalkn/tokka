@@ -2,6 +2,7 @@
   "schema": "v1",
   "name": "Tokka Gateway",
   "version": "0.1",
+  "debug": false,
   "server": {
     "port": 8090,
     "timeout": 5000

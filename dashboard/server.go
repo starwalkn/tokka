@@ -19,7 +19,7 @@ type Server struct {
 func NewServer(cfg *tokka.GatewayConfig) *Server {
 	return &Server{
 		cfg: cfg,
-		log: logger.New(true).Named("dashboard"),
+		log: logger.New(cfg.Debug).Named("dashboard"),
 	}
 }
 

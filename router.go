@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -40,8 +41,8 @@ type Backend struct {
 	ForwardQueryStrings []string
 }
 
-func NewRouter(cfgs []RouteConfig, globalMiddlewareCfgs []MiddlewareConfig) *Router {
-	log := logger.New(true)
+func NewRouter(cfgs []RouteConfig, globalMiddlewareCfgs []MiddlewareConfig, debug bool) *Router {
+	log := logger.New(debug)
 
 	// --- global middlewares ---
 	globalMiddlewareIndices, globalMiddlewares := initGlobalMiddlewares(globalMiddlewareCfgs, log)
@@ -204,7 +205,6 @@ func initPlugins(cfgs []PluginConfig, log *zap.Logger) []Plugin {
 /*
 ServeHTTP is the incoming requests pipeline:
 
-	├─ execute core plugins
 	├─ execute middlewares
 	├─ match route
 	├─ execute request plugins
@@ -238,7 +238,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var routeHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		pctx := newContext(req, rt)
+		start := time.Now()
+
+		tctx := newContext(req, rt)
 
 		// --- 1. Request-phase plugins ---
 		for _, p := range rt.Plugins {
@@ -248,7 +250,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 			r.log.Debug("executing request plugin", zap.String("name", p.Name()))
 
-			p.Execute(pctx)
+			p.Execute(tctx)
 		}
 
 		// --- 2. Backend dispatch ---
@@ -270,7 +272,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Header:     make(http.Header),
 		}
 
-		pctx.SetResponse(resp)
+		tctx.SetResponse(resp)
 		for _, p := range rt.Plugins {
 			if p.Type() != PluginTypeResponse {
 				continue
@@ -278,11 +280,17 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 			r.log.Debug("executing response plugin", zap.String("name", p.Name()))
 
-			p.Execute(pctx)
+			p.Execute(tctx)
+		}
+
+		if m := getActiveCorePlugin("metrics"); m != nil { //nolint:nolintlint,nestif
+			if metrics, ok := m.(contract.Metrics); ok {
+				metrics.ObserveRequest(rt.Method, rt.Path, time.Since(start), resp.StatusCode)
+			}
 		}
 
 		// --- 4. Write final output ---
-		copyResponse(w, pctx.Response()) //nolint:bodyclose // body closes in copyResponse
+		copyResponse(w, tctx.Response()) //nolint:bodyclose // body closes in copyResponse
 	})
 
 	for i := len(rt.Middlewares) - 1; i >= 0; i-- {

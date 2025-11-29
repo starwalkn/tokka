@@ -13,6 +13,7 @@ type GatewayConfig struct {
 	Schema      string             `json:"schema" yaml:"schema"`
 	Name        string             `json:"name" yaml:"name"`
 	Version     string             `json:"version" yaml:"version"`
+	Debug       bool               `json:"debug" yaml:"debug"`
 	Server      ServerConfig       `json:"server" yaml:"server"`
 	Dashboard   DashboardConfig    `json:"dashboard" yaml:"dashboard"`
 	Plugins     []CorePluginConfig `json:"plugins" yaml:"plugins"`

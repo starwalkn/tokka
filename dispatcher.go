@@ -42,21 +42,23 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) [][]b
 		go func(i int, b Backend, originalBody []byte) {
 			defer wg.Done()
 
-			m := b.Method
-			if m == "" {
+			// start := time.Now()
+
+			method := b.Method
+			if method == "" {
 				// Fallback method.
-				m = original.Method
+				method = original.Method
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(b.Timeout))
 			defer cancel()
 
 			// Send request body only for body-acceptable methods requests.
-			if m != http.MethodPost && m != http.MethodPut && m != http.MethodPatch {
+			if method != http.MethodPost && method != http.MethodPut && method != http.MethodPatch {
 				originalBody = nil
 			}
 
-			req, reqErr := http.NewRequestWithContext(ctx, m, b.URL, bytes.NewReader(originalBody))
+			req, reqErr := http.NewRequestWithContext(ctx, method, b.URL, bytes.NewReader(originalBody))
 			if reqErr != nil {
 				results[i] = []byte(jsonErrInternal)
 				return
@@ -65,13 +67,13 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) [][]b
 			d.resolveQueryStrings(b, req, original)
 			d.resolveHeaders(b, req, original)
 
-			d.log.Info("dispatching request", zap.String("method", m), zap.String("url", req.URL.String()))
+			d.log.Info("dispatching request", zap.String("method", method), zap.String("url", req.URL.String()))
 
 			resp, reqErr := d.client.Do(req)
 			if reqErr != nil {
 				results[i] = []byte(jsonErrInternal)
 
-				d.log.Error("backend request failed", zap.String("method", m), zap.Error(reqErr))
+				d.log.Error("backend request failed", zap.String("method", method), zap.Error(reqErr))
 				return
 			}
 
@@ -86,6 +88,12 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) [][]b
 			if reqErr = resp.Body.Close(); reqErr != nil {
 				d.log.Warn("cannot close backend response body", zap.Error(reqErr))
 			}
+
+			// if m := getActiveCorePlugin("metrics"); m != nil { //nolint:nolintlint,nestif
+			// 	if metrics, ok := m.(contract.Metrics); ok {
+			// 		metrics.ObserveBackend(route.Path, b.URL, b.Method, time.Since(start), resp.StatusCode)
+			// 	}
+			// }
 
 			results[i] = body
 		}(i, b, originalBody)

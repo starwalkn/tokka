@@ -1,6 +1,7 @@
 schema: v1
 name: Tokka Gateway
 version: "0.1"
+debug: false
 
 server:
   port: 8090
@@ -16,6 +17,10 @@ plugins:
     config:
       limit: 10
       window: 1
+
+  - name: metrics
+    config:
+      listen_addr: :9090
 
 middlewares:
   - name: recoverer
