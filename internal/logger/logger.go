@@ -1,21 +1,26 @@
 package logger
 
-import "go.uber.org/zap"
+import (
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
 
 func New(debug bool) *zap.Logger {
-	var (
-		log *zap.Logger
-		err error
-	)
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.RFC3339TimeEncoder
 
-	if debug {
-		log, err = zap.NewDevelopment()
-	} else {
-		log, err = zap.NewProduction()
+	config := zap.Config{
+		Level:         zap.NewAtomicLevelAt(zap.InfoLevel),
+		Development:   debug,
+		Encoding:      "json",
+		EncoderConfig: encoderConfig,
 	}
+
+	log, err := config.Build()
 	if err != nil {
 		panic(err)
 	}
+	defer log.Sync()
 
 	return log
 }
