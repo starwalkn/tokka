@@ -21,4 +21,11 @@ go.work.sum
 # Binaries directory
 .bin
 
+# Built middlewares and plugins
+build/middlewares
+build/plugins
+
+# Local k8s configuration files
+build/k8s
+
 .idea

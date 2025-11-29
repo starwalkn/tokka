@@ -1,7 +1,7 @@
 {
   "schema": "v1",
   "name": "Tokka Gateway",
-  "version": "0.1",
+  "version": "0.0.1-beta",
   "debug": false,
   "server": {
     "port": 8090,

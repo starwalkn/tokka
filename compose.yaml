@@ -9,31 +9,7 @@ services:
     ports:
       - '8090:8090'
       - '8095:8095'
-      - '9100:9100'
-      - '9464:9464'
-      - '9090:9090'
     volumes:
       - ./tokka.yaml:/app/tokka.yaml
     environment:
       TOKKA_CONFIG: ./tokka.yaml
-
-  otel-collector:
-    image: otel/opentelemetry-collector:0.115.1
-    container_name: otel-collector
-    command: [ "--config=/etc/otel-collector-config.yaml" ]
-    ports:
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
-      - "8888:8888" # Collector own metrics
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    depends_on:
-      - otel-collector
