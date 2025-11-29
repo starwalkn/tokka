@@ -10,7 +10,6 @@ import (
 	"github.com/starwalkn/tokka"
 	"github.com/starwalkn/tokka/dashboard"
 	_ "github.com/starwalkn/tokka/internal/plugin/ratelimit"
-	_ "github.com/starwalkn/tokka/internal/plugin/otel"
 )
 
 func main() {
