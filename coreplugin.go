@@ -4,7 +4,7 @@ import "sync"
 
 type CorePlugin interface {
 	Name() string
-	Init(cfg map[string]interface{}) error
+	Init(cfg map[string]any) error
 	Start() error
 	Stop() error
 }

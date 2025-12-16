@@ -26,7 +26,7 @@ func NewServer(cfg *tokka.GatewayConfig, log *zap.Logger) *Server {
 func (s *Server) Start() {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/config", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
@@ -36,6 +36,7 @@ func (s *Server) Start() {
 			http.Error(w, "cannot marshal config", http.StatusInternalServerError)
 		}
 
+		//nolint:errcheck,gosec // ignore error
 		w.Write(cfgBytes)
 	})
 

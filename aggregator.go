@@ -3,6 +3,7 @@ package tokka
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"go.uber.org/zap"
 )
@@ -44,27 +45,26 @@ func (a *defaultAggregator) aggregate(responses [][]byte, mode string, allowPart
 }
 
 func (a *defaultAggregator) doMerge(responses [][]byte, allowPartialResults bool) ([]byte, error) {
-	merged := make(map[string]interface{})
+	merged := make(map[string]any)
 
 	for _, resp := range responses {
-		var obj map[string]interface{}
+		var obj map[string]any
 
 		if err := json.Unmarshal(resp, &obj); err != nil {
 			if allowPartialResults {
 				a.log.Warn(
-					"failed to unmarshal response (partial results allowed)",
+					"failed to unmarshal response",
+					zap.Bool("allow_partial_results", allowPartialResults),
 					zap.Error(err),
 				)
 
 				continue
 			}
 
-			return nil, fmt.Errorf("cannot unmarshal response (partial results not allowed): %w", err)
+			return nil, fmt.Errorf("cannot unmarshal response: %w", err)
 		}
 
-		for k, v := range obj {
-			merged[k] = v
-		}
+		maps.Copy(merged, obj)
 	}
 
 	res, err := json.Marshal(merged)

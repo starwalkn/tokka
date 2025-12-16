@@ -22,8 +22,9 @@ type GatewayConfig struct {
 }
 
 type ServerConfig struct {
-	Port    int `json:"port" yaml:"port"`
-	Timeout int `json:"timeout" yaml:"timeout"`
+	Port          int  `json:"port" yaml:"port"`
+	Timeout       int  `json:"timeout" yaml:"timeout"`
+	EnableMetrics bool `json:"enable_metrics" yaml:"enable_metrics"`
 }
 
 type DashboardConfig struct {

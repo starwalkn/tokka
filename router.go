@@ -5,9 +5,11 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/starwalkn/tokka/internal/metric"
 	"github.com/starwalkn/tokka/internal/plugin/contract"
 )
 
@@ -16,7 +18,8 @@ type Router struct {
 	aggregator aggregator
 	Routes     []Route
 
-	log *zap.Logger
+	log     *zap.Logger
+	metrics *metric.Metrics
 }
 
 type Route struct {
@@ -202,6 +205,11 @@ ServeHTTP is the incoming requests pipeline:
 	└─ write response
 */
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	start := time.Now()
+
+	defer r.metrics.IncRequestsTotal()
+	defer r.metrics.UpdateRequestsDuration(start)
+
 	// --- 0. Global (core) plugins, e.g. rate limiter ---
 	if rl := getActiveCorePlugin("ratelimit"); rl != nil { //nolint:nolintlint,nestif
 		if limiter, ok := rl.(contract.RateLimit); ok {
@@ -220,6 +228,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	rt := r.match(req)
 	if rt == nil {
 		r.log.Error("no route found", zap.String("request_uri", req.URL.RequestURI()))
+		r.metrics.IncFailedRequestsTotal(metric.FailReasonNoMatchedRoute)
+
 		http.NotFound(w, req)
 
 		return

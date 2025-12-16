@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/starwalkn/tokka/internal/metric"
 	"go.uber.org/zap"
 )
 
@@ -18,8 +19,9 @@ type dispatcher interface {
 }
 
 type defaultDispatcher struct {
-	client *http.Client
-	log    *zap.Logger
+	client  *http.Client
+	log     *zap.Logger
+	metrics *metric.Metrics
 }
 
 func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) [][]byte {
@@ -58,7 +60,15 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) [][]b
 
 			req, err := http.NewRequestWithContext(ctx, method, b.URL, bytes.NewReader(originalBody))
 			if err != nil {
+				d.metrics.IncFailedRequestsTotal(metric.FailReasonUpstreamError)
+				d.log.Error("cannot create request to backend",
+					zap.String("url", b.URL),
+					zap.String("method", method),
+					zap.Error(err),
+				)
+
 				results[i] = []byte(jsonErrInternal)
+
 				return
 			}
 
@@ -69,9 +79,11 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) [][]b
 
 			resp, err := d.client.Do(req)
 			if err != nil {
+				d.metrics.IncFailedRequestsTotal(metric.FailReasonUpstreamError)
+				d.log.Error("backend request failed", zap.String("method", method), zap.Error(err))
+
 				results[i] = []byte(jsonErrInternal)
 
-				d.log.Error("backend request failed", zap.String("method", method), zap.Error(err))
 				return
 			}
 

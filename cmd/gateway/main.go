@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/VictoriaMetrics/metrics"
 	"github.com/starwalkn/tokka"
 	"github.com/starwalkn/tokka/dashboard"
 	"github.com/starwalkn/tokka/internal/logger"
@@ -29,9 +30,20 @@ func main() {
 		go dashboardServer.Start()
 	}
 
+	mainRouter := tokka.NewRouter(cfg.Routes, cfg.Middlewares, log.Named("router"))
+
+	mux := http.NewServeMux()
+	mux.Handle("/", mainRouter)
+
+	if cfg.Server.EnableMetrics {
+		mux.Handle("/metrics", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			metrics.WritePrometheus(w, true)
+		}))
+	}
+
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:      tokka.NewRouter(cfg.Routes, cfg.Middlewares, log.Named("router")),
+		Handler:      mux,
 		ReadTimeout:  time.Duration(cfg.Server.Timeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.Server.Timeout) * time.Second,
 	}
