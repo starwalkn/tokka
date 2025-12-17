@@ -48,8 +48,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: starwalkn/tokka
-          tags: type=semver,pattern={{version}}
-          flavor: latest=true
+          tags: type=semver,pattern={{version}}-amd64
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -71,7 +70,7 @@ jobs:
           platforms: linux/amd64
           github-token: ${{ github.token }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}:amd64
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           
   docker-arm64:
@@ -89,8 +88,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: starwalkn/tokka
-          tags: type=semver,pattern={{version}}
-          flavor: latest=true
+          tags: type=semver,pattern={{version}}-arm64
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -112,7 +110,7 @@ jobs:
           platforms: linux/arm64
           github-token: ${{ github.token }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}:arm64
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           
   docker-manifest:
@@ -120,15 +118,25 @@ jobs:
     runs-on: ubuntu-22.04
   
     steps:
-      - uses: docker/login-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
   
-      - name: Create manifest
+      - name: Create and push manifest
         run: |
+          VERSION=${GITHUB_REF_NAME#v}
+  
+          docker manifest create starwalkn/tokka:${VERSION} \
+            starwalkn/tokka:${VERSION}-amd64 \
+            starwalkn/tokka:${VERSION}-arm64
+  
+          docker manifest push starwalkn/tokka:${VERSION}
+  
           docker manifest create starwalkn/tokka:latest \
-            starwalkn/tokka:amd64 \
-            starwalkn/tokka:arm64
+            starwalkn/tokka:${VERSION}-amd64 \
+            starwalkn/tokka:${VERSION}-arm64
   
           docker manifest push starwalkn/tokka:latest
+
