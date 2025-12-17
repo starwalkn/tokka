@@ -22,6 +22,6 @@ COPY --from=builder /app/.bin/tokka /bin/tokka
 COPY --from=builder /app/build/plugins /tokka/plugins
 COPY --from=builder /app/build/middlewares /tokka/middlewares
 
-EXPOSE 8090/tcp 8095/tcp
+EXPOSE 7805/tcp 7806/tcp
 
 CMD ["/bin/tokka"]

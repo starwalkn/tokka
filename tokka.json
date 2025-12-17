@@ -1,15 +1,16 @@
 {
   "schema": "v1",
   "name": "Tokka Gateway",
-  "version": "0.0.1-beta",
+  "version": "0.0.1",
   "debug": false,
   "server": {
-    "port": 8090,
-    "timeout": 5000
+    "port": 7805,
+    "timeout": 5000,
+    "enable_metrics": true
   },
   "dashboard": {
     "enable": true,
-    "port": 8095,
+    "port": 7806,
     "timeout": 5000
   },
   "plugins": [
@@ -49,19 +50,13 @@
           "url": "http://user-service.local/v1/users",
           "method": "GET",
           "timeout": 3000,
-          "forward_query_strings": [
-            "*"
-          ],
-          "forward_headers": [
-            "X-*"
-          ]
+          "forward_query_strings": ["*"],
+          "forward_headers": ["X-*"]
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET",
-          "forward_headers": [
-            "X-Request-ID"
-          ]
+          "forward_headers": ["X-Request-ID"]
         }
       ],
       "aggregate": "merge",
@@ -86,23 +81,15 @@
           "url": "http://domain-service.local/v1/domains",
           "method": "GET",
           "timeout": 3000,
-          "forward_query_strings": [
-            "*"
-          ],
-          "forward_headers": [
-            "X-For*"
-          ]
+          "forward_query_strings": ["*"],
+          "forward_headers": ["X-For*"]
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET",
           "timeout": 2000,
-          "forward_query_strings": [
-            "id"
-          ],
-          "forward_headers": [
-            "X-For"
-          ]
+          "forward_query_strings": ["id"],
+          "forward_headers": ["X-For"]
         }
       ],
       "aggregate": "merge",

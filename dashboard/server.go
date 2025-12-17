@@ -49,10 +49,10 @@ func (s *Server) Start() {
 		WriteTimeout: time.Duration(s.cfg.Dashboard.Timeout) * time.Second,
 	}
 
-	s.log.Info("📊 Dashboard server started\n", zap.String("addr", addr))
+	s.log.Info("dashboard server started", zap.String("addr", addr))
 
 	if err := server.ListenAndServe(); err != nil {
-		s.log.Error("dashboard server had errors, disabling", zap.Error(err))
+		s.log.Error("dashboard server had errors, processed shutdown", zap.Error(err))
 		return
 	}
 }

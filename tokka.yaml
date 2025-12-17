@@ -1,11 +1,12 @@
 schema: v1
 name: Tokka Gateway
-version: "0.0.1-beta"
+version: "0.0.1"
 debug: false
 
 server:
-  port: 8090
-  timeout: 5000
+  port: 7805
+  timeout: 7806
+  enable_metrics: true
 
 dashboard:
   enable: true
@@ -48,7 +49,6 @@ routes:
         forward_headers:
           - "X-Request-ID"
     aggregate: merge
-    transform: default
     allow_partial_results: true
 
   - path: /api/domains
@@ -76,7 +76,6 @@ routes:
         forward_headers:
           - "X-For"
     aggregate: merge
-    transform: default
     allow_partial_results: false
 
   - path: /api/domains
@@ -88,7 +87,7 @@ routes:
         config:
           enabled: true
           alg: gzip
-    plugins: [ ]
+    plugins: []
     backends:
       - url: http://domain-service.local/v1/domains
         method: POST
@@ -97,7 +96,6 @@ routes:
       - url: http://profile-service.local/v1/details
         method: GET
     aggregate: array
-    transform: default
     allow_partial_results: false
 
   - path: /api/domains
@@ -116,7 +114,7 @@ routes:
         override: true
         config:
           enabled: false
-    plugins: [ ]
+    plugins: []
     backends:
       - url: http://domain-service.local/v1/domains
         method: DELETE
@@ -125,5 +123,4 @@ routes:
       - url: http://profile-service.local/v1/details
         method: GET
     aggregate: array
-    transform: default
     allow_partial_results: false

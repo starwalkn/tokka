@@ -33,13 +33,14 @@ func main() {
 	mainRouter := tokka.NewRouter(cfg.Routes, cfg.Middlewares, log.Named("router"))
 
 	mux := http.NewServeMux()
-	mux.Handle("/", mainRouter)
 
 	if cfg.Server.EnableMetrics {
 		mux.Handle("/metrics", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			metrics.WritePrometheus(w, true)
 		}))
 	}
+
+	mux.Handle("/", mainRouter)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
