@@ -35,8 +35,8 @@ jobs:
       - name: Build amd64 and push
         uses: docker/build-push-action@v6
         with:
-          context: build
-          file: Dockerfile
+          context: .
+          file: build/Dockerfile
           platforms: linux/amd64
           github-token: ${{ github.token }}
           push: true
@@ -72,8 +72,8 @@ jobs:
       - name: Build amd64 and push
         uses: docker/build-push-action@v6
         with:
-          context: build
-          file: Dockerfile
+          context: .
+          file: build/Dockerfile
           platforms: linux/arm64
           github-token: ${{ github.token }}
           push: true
