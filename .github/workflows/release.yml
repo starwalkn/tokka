@@ -38,14 +38,14 @@ jobs:
       - name: Build amd64 and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: build/Dockerfile
+          context: build
+          file: Dockerfile
           platforms: linux/amd64
           github-token: ${{ github.token }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          
+
   docker-arm64:
     # Build and push docker image only for new tags
     if: startsWith(github.ref, 'refs/tags/v')
@@ -78,37 +78,37 @@ jobs:
       - name: Build amd64 and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: build/Dockerfile
+          context: build
+          file: Dockerfile
           platforms: linux/arm64
           github-token: ${{ github.token }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          
+
   docker-manifest:
     needs: [docker-amd64, docker-arm64]
     runs-on: ubuntu-22.04
-  
+
     steps:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-  
+
       - name: Create and push manifest
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-  
+
           docker manifest create starwalkn/tokka:${VERSION} \
             starwalkn/tokka:${VERSION}-amd64 \
             starwalkn/tokka:${VERSION}-arm64
-  
+
           docker manifest push starwalkn/tokka:${VERSION}
-  
+
           docker manifest create starwalkn/tokka:latest \
             starwalkn/tokka:${VERSION}-amd64 \
             starwalkn/tokka:${VERSION}-arm64
-  
+
           docker manifest push starwalkn/tokka:latest
