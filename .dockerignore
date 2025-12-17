@@ -20,6 +20,7 @@ build/plugins
 
 # Local k8s configuration files
 build/k8s
+.local
 
 !build/Dockerfile
 

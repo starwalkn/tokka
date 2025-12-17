@@ -1,3 +1,5 @@
+![Logo](docs/src/img/logo.png)
+
 # Tokka API Gateway
 
 A lightweight, modular, and high-performance **API Gateway** for modern microservices.
