@@ -1,4 +1,4 @@
-![Logo](docs/src/img/logo.jpg)
+![Logo](docs/static/img/logo.jpg)
 
 # Tokka API Gateway
 
