@@ -42,14 +42,14 @@ method = "GET"
 aggregate = "merge"
 allow_partial_results = true
 
-  [[routes.backends]]
+  [[routes.upstreams]]
   url = "http://user-service.local/v1/users"
   method = "GET"
   timeout = 3000
   forward_query_strings = ["*"]
   forward_headers = ["X-*"]
 
-  [[routes.backends]]
+  [[routes.upstreams]]
   url = "http://profile-service.local/v1/details"
   method = "GET"
   forward_headers = ["X-Request-ID"]
@@ -68,14 +68,14 @@ allow_partial_results = false
     [routes.middlewares.config]
     enabled = false
 
-  [[routes.backends]]
+  [[routes.upstreams]]
   url = "http://domain-service.local/v1/domains"
   method = "GET"
   timeout = 3000
   forward_query_strings = ["*"]
   forward_headers = ["X-For*"]
 
-  [[routes.backends]]
+  [[routes.upstreams]]
   url = "http://profile-service.local/v1/details"
   method = "GET"
   timeout = 2000
@@ -98,12 +98,12 @@ plugins = []
     enabled = true
     alg = "gzip"
 
-  [[routes.backends]]
+  [[routes.upstreams]]
   url = "http://domain-service.local/v1/domains"
   method = "POST"
   timeout = 1000
 
-  [[routes.backends]]
+  [[routes.upstreams]]
   url = "http://profile-service.local/v1/details"
   method = "GET"
 
@@ -132,11 +132,11 @@ plugins = []
     [routes.middlewares.config]
     enabled = false
 
-  [[routes.backends]]
+  [[routes.upstreams]]
   url = "http://domain-service.local/v1/domains"
   method = "DELETE"
   timeout = 2000
 
-  [[routes.backends]]
+  [[routes.upstreams]]
   url = "http://profile-service.local/v1/details"
   method = "GET"

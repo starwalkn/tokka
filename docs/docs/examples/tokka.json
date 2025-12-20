@@ -45,7 +45,7 @@
       "path": "/api/users",
       "method": "GET",
       "middlewares": [],
-      "backends": [
+      "upstreams": [
         {
           "url": "http://user-service.local/v1/users",
           "method": "GET",
@@ -76,7 +76,7 @@
           }
         }
       ],
-      "backends": [
+      "upstreams": [
         {
           "url": "http://domain-service.local/v1/domains",
           "method": "GET",
@@ -111,7 +111,7 @@
         }
       ],
       "plugins": [],
-      "backends": [
+      "upstreams": [
         {
           "url": "http://domain-service.local/v1/domains",
           "method": "POST",
@@ -150,7 +150,7 @@
         }
       ],
       "plugins": [],
-      "backends": [
+      "upstreams": [
         {
           "url": "http://domain-service.local/v1/domains",
           "method": "DELETE",

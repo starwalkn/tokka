@@ -2,6 +2,7 @@ package tokka
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -19,13 +20,13 @@ type Router struct {
 	Routes     []Route
 
 	log     *zap.Logger
-	metrics *metric.Metrics
+	metrics metric.Metrics
 }
 
 type Route struct {
 	Path                string
 	Method              string
-	Backends            []Backend
+	Upstreams           []Upstream
 	Aggregate           string
 	Transform           string
 	AllowPartialResults bool
@@ -33,21 +34,11 @@ type Route struct {
 	Middlewares         []Middleware
 }
 
-type Backend struct {
-	URL                 string
-	Method              string
-	Timeout             int64
-	Headers             map[string]string
-	ForwardHeaders      []string
-	ForwardQueryStrings []string
-}
-
 func newDefaultRouter(routesCount int, log *zap.Logger) *Router {
 	metrics := metric.New()
 
 	return &Router{
 		dispatcher: &defaultDispatcher{
-			client:  &http.Client{},
 			log:     log.Named("dispatcher"),
 			metrics: metrics,
 		},
@@ -59,6 +50,7 @@ func newDefaultRouter(routesCount int, log *zap.Logger) *Router {
 		metrics: metrics,
 	}
 }
+
 func NewRouter(cfgs []RouteConfig, globalMiddlewareCfgs []MiddlewareConfig, log *zap.Logger) *Router {
 	// --- global middlewares ---
 	globalMiddlewareIndices, globalMiddlewares := initGlobalMiddlewares(globalMiddlewareCfgs, log)
@@ -104,7 +96,7 @@ func NewRouter(cfgs []RouteConfig, globalMiddlewareCfgs []MiddlewareConfig, log 
 		route := Route{
 			Path:                rcfg.Path,
 			Method:              rcfg.Method,
-			Backends:            initBackends(rcfg.Backends),
+			Upstreams:           initUpstreams(rcfg.Upstreams),
 			Aggregate:           rcfg.Aggregate,
 			Transform:           rcfg.Transform,
 			AllowPartialResults: rcfg.AllowPartialResults,
@@ -144,24 +136,47 @@ func initGlobalMiddlewares(cfgs []MiddlewareConfig, log *zap.Logger) (map[string
 	return globalMiddlewareIndices, globalMiddlewares
 }
 
-func initBackends(cfgs []BackendConfig) []Backend {
-	backends := make([]Backend, 0, len(cfgs))
+func initUpstreams(cfgs []UpstreamConfig) []Upstream {
+	upstreams := make([]Upstream, 0, len(cfgs))
 
-	for _, cfg := range cfgs {
-		//nolint:staticcheck // backend structure may change
-		backend := Backend{
-			URL:                 cfg.URL,
-			Method:              cfg.Method,
-			Timeout:             cfg.Timeout,
-			Headers:             cfg.Headers,
-			ForwardHeaders:      cfg.ForwardHeaders,
-			ForwardQueryStrings: cfg.ForwardQueryStrings,
-		}
-
-		backends = append(backends, backend)
+	//nolint:mnd // be configurable in future
+	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		ForceAttemptHTTP2:   true,
 	}
 
-	return backends
+	for _, cfg := range cfgs {
+		policy := UpstreamPolicy{
+			AllowedStatuses: cfg.Policy.AllowedStatuses,
+			AllowEmptyBody:  cfg.Policy.AllowEmptyBody,
+			MapStatusCodes:  cfg.Policy.MapStatusCodes,
+			RetryPolicy: UpstreamRetryPolicy{
+				MaxRetries:      cfg.Policy.RetryConfig.MaxRetries,
+				RetryOnStatuses: cfg.Policy.RetryConfig.RetryOnStatuses,
+				BackoffMs:       cfg.Policy.RetryConfig.BackoffMs,
+			},
+		}
+
+		upstream := &httpUpstream{
+			name:                fmt.Sprintf("%s_%s", cfg.Method, cfg.URL),
+			url:                 cfg.URL,
+			method:              cfg.Method,
+			timeout:             cfg.Timeout,
+			headers:             cfg.Headers,
+			forwardHeaders:      cfg.ForwardHeaders,
+			forwardQueryStrings: cfg.ForwardQueryStrings,
+			policy:              policy,
+			client: &http.Client{
+				Transport: transport,
+			},
+		}
+
+		upstreams = append(upstreams, upstream)
+	}
+
+	return upstreams
 }
 
 func initPlugins(cfgs []PluginConfig, log *zap.Logger) []Plugin {
@@ -203,7 +218,7 @@ ServeHTTP is the incoming requests pipeline:
 	├─ execute middlewares
 	├─ match route
 	├─ execute request plugins
-	├─ dispatch backends
+	├─ dispatch upstreams
 	├─ aggregate response
 	├─ execute response plugins
 	└─ write response
@@ -218,14 +233,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer r.metrics.UpdateRequestsDuration(start)
 
 	// --- 0. Global (core) plugins, e.g. rate limiter ---
-	if rl := getActiveCorePlugin("ratelimit"); rl != nil { //nolint:nolintlint,nestif
-		if limiter, ok := rl.(contract.RateLimit); ok {
+	if corePlugin := getActiveCorePlugin("ratelimit"); corePlugin != nil { //nolint:nolintlint,nestif
+		if rateLimiter, ok := corePlugin.(contract.RateLimit); ok {
 			ip := req.Header.Get("X-Forwarded-For")
 			if ip == "" {
 				ip = req.RemoteAddr
 			}
 
-			if !limiter.Allow(ip) {
+			if !rateLimiter.Allow(ip) {
 				http.Error(w, jsonErrRateLimitExceeded, http.StatusTooManyRequests)
 				return
 			}
@@ -243,7 +258,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var routeHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		tctx := newContext(req, rt) // Tokka context.
+		tctx := newContext(req) // Tokka context.
 
 		// --- 1. Request-phase plugins ---
 		for _, p := range rt.Plugins {
@@ -256,7 +271,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			p.Execute(tctx)
 		}
 
-		// --- 2. Backend dispatch ---
+		// --- 2. Upstream dispatch ---
 		responses := r.dispatcher.dispatch(rt, req)
 
 		r.log.Debug("dispatched responses", zap.Any("responses", responses))
@@ -299,6 +314,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	routeHandler.ServeHTTP(w, req)
 }
 
+// match matches the given request to a route.
 func (r *Router) match(req *http.Request) *Route {
 	for _, route := range r.Routes {
 		if route.Method != "" && route.Method != req.Method {
@@ -313,6 +329,7 @@ func (r *Router) match(req *http.Request) *Route {
 	return nil
 }
 
+// copyResponse copies the *http.Response to the http.ResponseWriter.
 func copyResponse(w http.ResponseWriter, resp *http.Response) {
 	for k, vv := range resp.Header {
 		for _, v := range vv {

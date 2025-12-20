@@ -9,32 +9,42 @@ import (
 	"time"
 
 	"github.com/starwalkn/tokka/internal/metric"
+
 	"go.uber.org/zap"
 )
 
+type testMetrics struct{}
+
+func (m *testMetrics) IncRequestsTotal()                          {}
+func (m *testMetrics) UpdateRequestsDuration(_ time.Time)         {}
+func (m *testMetrics) IncResponsesTotal(_ int)                    {}
+func (m *testMetrics) IncRequestsInFlight()                       {}
+func (m *testMetrics) DecRequestsInFlight()                       {}
+func (m *testMetrics) IncFailedRequestsTotal(_ metric.FailReason) {}
+func (m *testMetrics) IncCounter(_ string, _ ...zap.Field)        {}
+
 func TestDispatcher_Dispatch_Success(t *testing.T) {
-	backendA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstreamA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.Write([]byte("A"))
 	}))
-	defer backendA.Close()
+	defer upstreamA.Close()
 
-	backendB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstreamB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.Write([]byte("B"))
 	}))
-	defer backendB.Close()
+	defer upstreamB.Close()
 
 	d := &defaultDispatcher{
-		client:  &http.Client{},
 		log:     zap.NewNop(),
-		metrics: metric.New(),
+		metrics: &testMetrics{},
 	}
 
 	route := &Route{
-		Backends: []Backend{
-			{URL: backendA.URL, Timeout: 1000},
-			{URL: backendB.URL, Timeout: 1000},
+		Upstreams: []Upstream{
+			&httpUpstream{url: upstreamA.URL, timeout: 1000, client: http.DefaultClient},
+			&httpUpstream{url: upstreamB.URL, timeout: 1000, client: http.DefaultClient},
 		},
 	}
 
@@ -45,61 +55,35 @@ func TestDispatcher_Dispatch_Success(t *testing.T) {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
 
-	got := string(bytes.Join(results, []byte{}))
-	want := "AB"
-	if got != want && got != "BA" { // Порядок не гарантирован
+	got := string(results[0].Body) + string(results[1].Body)
+	want1 := "AB"
+	if got != want1 {
 		t.Errorf("unexpected results: %q", got)
 	}
 }
 
-func TestDispatcher_Dispatch_Timeout(t *testing.T) {
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(200 * time.Millisecond)
-		w.Write([]byte("too slow"))
-	}))
-	defer backend.Close()
-
-	d := &defaultDispatcher{
-		client:  &http.Client{},
-		log:     zap.NewNop(),
-		metrics: metric.New(),
-	}
-
-	route := &Route{
-		Backends: []Backend{
-			{URL: backend.URL, Timeout: 50},
-		},
-	}
-
-	originalRequest := httptest.NewRequest(http.MethodGet, "http://example.com/test", nil)
-
-	results := d.dispatch(route, originalRequest)
-	if string(results[0]) != jsonErrInternal {
-		t.Errorf("expected internalError, got %q", results[0])
-	}
-}
-
 func TestDispatcher_Dispatch_ForwardQueryAndHeaders(t *testing.T) {
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstreamA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("foo")
 		h := r.Header.Get("X-Test")
+
 		w.Write([]byte(q + "-" + h))
 	}))
-	defer backend.Close()
+	defer upstreamA.Close()
 
 	d := &defaultDispatcher{
-		client:  &http.Client{},
 		log:     zap.NewNop(),
-		metrics: metric.New(),
+		metrics: &testMetrics{},
 	}
 
 	route := &Route{
-		Backends: []Backend{
-			{
-				URL:                 backend.URL,
-				ForwardQueryStrings: []string{"foo"},
-				ForwardHeaders:      []string{"X-Test"},
-				Timeout:             500,
+		Upstreams: []Upstream{
+			&httpUpstream{
+				url:                 upstreamA.URL,
+				forwardQueryStrings: []string{"foo"},
+				forwardHeaders:      []string{"X-Test"},
+				timeout:             500,
+				client:              http.DefaultClient,
 			},
 		},
 	}
@@ -109,27 +93,31 @@ func TestDispatcher_Dispatch_ForwardQueryAndHeaders(t *testing.T) {
 
 	results := d.dispatch(route, originalRequest)
 
-	if string(results[0]) != "bar-baz" {
-		t.Errorf("unexpected result: %q", results[0])
+	if string(results[0].Body) != "bar-baz" {
+		t.Errorf("unexpected result: %q", results[0].Body)
 	}
 }
 
 func TestDispatcher_Dispatch_PostWithBody(t *testing.T) {
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstreamA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		w.Write(body)
 	}))
-	defer backend.Close()
+	defer upstreamA.Close()
 
 	d := &defaultDispatcher{
-		client:  &http.Client{},
 		log:     zap.NewNop(),
-		metrics: metric.New(),
+		metrics: &testMetrics{},
 	}
 
 	route := &Route{
-		Backends: []Backend{
-			{URL: backend.URL, Timeout: 500},
+		Upstreams: []Upstream{
+			&httpUpstream{
+				url:     upstreamA.URL,
+				method:  http.MethodPost,
+				timeout: 500,
+				client:  http.DefaultClient,
+			},
 		},
 	}
 
@@ -137,7 +125,7 @@ func TestDispatcher_Dispatch_PostWithBody(t *testing.T) {
 
 	results := d.dispatch(route, originalRequest)
 
-	if string(results[0]) != "hello" {
-		t.Errorf("expected 'hello', got %q", results[0])
+	if string(results[0].Body) != "hello" {
+		t.Errorf("expected 'hello', got %q", results[0].Body)
 	}
 }

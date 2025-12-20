@@ -39,19 +39,34 @@ type RouteConfig struct {
 	Method              string             `json:"method" yaml:"method" toml:"method"`
 	Plugins             []PluginConfig     `json:"plugins" yaml:"plugins" toml:"plugins"`
 	Middlewares         []MiddlewareConfig `json:"middlewares" yaml:"middlewares" toml:"middlewares"`
-	Backends            []BackendConfig    `json:"backends" yaml:"backends" toml:"backends"`
+	Upstreams           []UpstreamConfig   `json:"upstreams" yaml:"upstreams" toml:"upstreams"`
 	Aggregate           string             `json:"aggregate" yaml:"aggregate" toml:"aggregate"`
 	Transform           string             `json:"transform" yaml:"transform" toml:"transform"`
 	AllowPartialResults bool               `json:"allow_partial_results" yaml:"allow_partial_results" toml:"allow_partial_results"`
 }
 
-type BackendConfig struct {
-	URL                 string            `json:"url" yaml:"url" toml:"url"`
-	Method              string            `json:"method" yaml:"method" toml:"method"`
-	Timeout             int64             `json:"timeout" yaml:"timeout" toml:"timeout"`
-	Headers             map[string]string `json:"headers" yaml:"headers" toml:"headers"`
-	ForwardHeaders      []string          `json:"forward_headers" yaml:"forward_headers" toml:"forward_headers"`
-	ForwardQueryStrings []string          `json:"forward_query_strings" yaml:"forward_query_strings" toml:"forward_query_strings"`
+type UpstreamConfig struct {
+	URL                 string               `json:"url" yaml:"url" toml:"url"`
+	Method              string               `json:"method" yaml:"method" toml:"method"`
+	Timeout             int64                `json:"timeout" yaml:"timeout" toml:"timeout"`
+	Headers             map[string]string    `json:"headers" yaml:"headers" toml:"headers"`
+	ForwardHeaders      []string             `json:"forward_headers" yaml:"forward_headers" toml:"forward_headers"`
+	ForwardQueryStrings []string             `json:"forward_query_strings" yaml:"forward_query_strings" toml:"forward_query_strings"`
+	Policy              UpstreamPolicyConfig `json:"policy" yaml:"policy" toml:"policy"`
+}
+
+type UpstreamPolicyConfig struct {
+	AllowedStatuses []int       `json:"allowed_status_codes" yaml:"allowed_status_codes" toml:"allowed_status_codes"`
+	AllowEmptyBody  bool        `json:"allow_empty_body" yaml:"allow_empty_body" toml:"allow_empty_body"`
+	MapStatusCodes  map[int]int `json:"map_status_codes" yaml:"map_status_codes" toml:"map_status_codes"`
+
+	RetryConfig UpstreamRetryPolicyConfig `json:"retry" yaml:"retry" toml:"retry"`
+}
+
+type UpstreamRetryPolicyConfig struct {
+	MaxRetries      int   `json:"max_retries" yaml:"max_retries" toml:"max_retries"`
+	RetryOnStatuses []int `json:"retry_on_statuses" yaml:"retry_on_statuses" toml:"retry_on_statuses"`
+	BackoffMs       int64 `json:"backoff_ms" yaml:"backoff_ms" toml:"backoff_ms"`
 }
 
 type PluginConfig struct {

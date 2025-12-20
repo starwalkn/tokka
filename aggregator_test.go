@@ -12,13 +12,26 @@ func newTestAggregator() *defaultAggregator {
 	return &defaultAggregator{log: zap.NewNop()}
 }
 
+func makeUpstreamResponses(bodies [][]byte, errs []error) []UpstreamResponse {
+	responses := make([]UpstreamResponse, len(bodies))
+
+	for i := range bodies {
+		responses[i] = UpstreamResponse{
+			Body: bodies[i],
+			Err:  errs[i],
+		}
+	}
+
+	return responses
+}
+
 func TestAggregator_Merge_Success(t *testing.T) {
 	agg := newTestAggregator()
 
-	responses := [][]byte{
+	responses := makeUpstreamResponses([][]byte{
 		[]byte(`{"a":1,"b":2}`),
 		[]byte(`{"b":3,"c":4}`),
-	}
+	}, []error{nil, nil})
 
 	gotBytes := agg.aggregate(responses, strategyMerge, false)
 
@@ -41,10 +54,10 @@ func TestAggregator_Merge_Success(t *testing.T) {
 func TestAggregator_Merge_PartialAllowed(t *testing.T) {
 	agg := newTestAggregator()
 
-	responses := [][]byte{
+	responses := makeUpstreamResponses([][]byte{
 		[]byte(`{"a":1}`),
 		[]byte(`invalid json`),
-	}
+	}, []error{nil, nil})
 
 	gotBytes := agg.aggregate(responses, strategyMerge, true)
 
@@ -65,10 +78,10 @@ func TestAggregator_Merge_PartialAllowed(t *testing.T) {
 func TestAggregator_Merge_PartialNotAllowed(t *testing.T) {
 	agg := newTestAggregator()
 
-	responses := [][]byte{
+	responses := makeUpstreamResponses([][]byte{
 		[]byte(`{"a":1}`),
 		[]byte(`invalid json`),
-	}
+	}, []error{nil, nil})
 
 	gotBytes := agg.aggregate(responses, strategyMerge, false)
 	if gotBytes != nil {
@@ -79,10 +92,10 @@ func TestAggregator_Merge_PartialNotAllowed(t *testing.T) {
 func TestAggregator_Array_Success(t *testing.T) {
 	agg := newTestAggregator()
 
-	responses := [][]byte{
+	responses := makeUpstreamResponses([][]byte{
 		[]byte(`{"x":1}`),
 		[]byte(`{"y":2}`),
-	}
+	}, []error{nil, nil})
 
 	gotBytes := agg.aggregate(responses, strategyArray, false)
 
@@ -104,9 +117,9 @@ func TestAggregator_Array_Success(t *testing.T) {
 func TestAggregator_UnknownStrategy(t *testing.T) {
 	agg := newTestAggregator()
 
-	responses := [][]byte{
+	responses := makeUpstreamResponses([][]byte{
 		[]byte(`{"a":1}`),
-	}
+	}, []error{nil})
 
 	gotBytes := agg.aggregate(responses, "unknown", false)
 	if gotBytes != nil {

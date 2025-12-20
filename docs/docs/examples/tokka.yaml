@@ -35,7 +35,7 @@ middlewares:
 routes:
   - path: /api/users
     method: GET
-    backends:
+    upstreams:
       - url: http://user-service.local/v1/users
         method: GET
         timeout: 3000
@@ -43,6 +43,7 @@ routes:
           - "*"
         forward_headers:
           - "X-*"
+        policy:
 
       - url: http://profile-service.local/v1/details
         method: GET
@@ -59,7 +60,7 @@ routes:
         override: true
         config:
           enabled: false
-    backends:
+    upstreams:
       - url: http://domain-service.local/v1/domains
         method: GET
         timeout: 3000
@@ -88,7 +89,7 @@ routes:
           enabled: true
           alg: gzip
     plugins: []
-    backends:
+    upstreams:
       - url: http://domain-service.local/v1/domains
         method: POST
         timeout: 1000
@@ -115,7 +116,7 @@ routes:
         config:
           enabled: false
     plugins: []
-    backends:
+    upstreams:
       - url: http://domain-service.local/v1/domains
         method: DELETE
         timeout: 2000

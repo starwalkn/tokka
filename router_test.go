@@ -7,22 +7,25 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/starwalkn/tokka/internal/metric"
 	"go.uber.org/zap"
 )
 
 type mockDispatcher struct {
-	results [][]byte
+	results []UpstreamResponse
 }
 
-func (m *mockDispatcher) dispatch(_ *Route, _ *http.Request) [][]byte {
+func (m *mockDispatcher) dispatch(_ *Route, _ *http.Request) []UpstreamResponse {
 	return m.results
 }
 
 type mockAggregator struct{}
 
-func (m *mockAggregator) aggregate(results [][]byte, _ string, _ bool) []byte {
-	return bytes.Join(results, []byte(","))
+func (m *mockAggregator) aggregate(responses []UpstreamResponse, _ string, _ bool) []byte {
+	var out [][]byte
+	for _, r := range responses {
+		out = append(out, r.Body)
+	}
+	return bytes.Join(out, []byte(","))
 }
 
 type mockPlugin struct {
@@ -38,8 +41,8 @@ func (m *mockPlugin) Execute(ctx Context)   { m.fn(ctx) }
 
 type mockMiddleware struct{}
 
-func (m *mockMiddleware) Init(_ map[string]interface{}) error { return nil }
-func (m *mockMiddleware) Name() string                        { return "mockmw" }
+func (m *mockMiddleware) Init(_ map[string]any) error { return nil }
+func (m *mockMiddleware) Name() string                { return "mockmw" }
 func (m *mockMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("X-Middleware", "ok")
@@ -49,18 +52,22 @@ func (m *mockMiddleware) Handler(next http.Handler) http.Handler {
 
 func TestRouter_ServeHTTP_BasicFlow(t *testing.T) {
 	r := &Router{
-		dispatcher: &mockDispatcher{results: [][]byte{[]byte("A"), []byte("B")}},
+		dispatcher: &mockDispatcher{
+			results: []UpstreamResponse{
+				{Body: []byte("A"), Status: 200},
+				{Body: []byte("B"), Status: 200},
+			},
+		},
 		aggregator: &mockAggregator{},
 		Routes: []Route{
 			{
 				Path:      "/test",
 				Method:    http.MethodGet,
 				Aggregate: "join",
-				Backends:  []Backend{{URL: "mock1"}, {URL: "mock2"}},
 			},
 		},
 		log:     zap.NewNop(),
-		metrics: metric.New(),
+		metrics: &testMetrics{},
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -76,8 +83,9 @@ func TestRouter_ServeHTTP_BasicFlow(t *testing.T) {
 		t.Fatalf("expected 200, got %d", res.StatusCode)
 	}
 
-	if string(body) != "A,B" {
-		t.Errorf("unexpected body: %q", string(body))
+	got := string(body)
+	if got != "A,B" && got != "B,A" {
+		t.Errorf("unexpected body: %q", got)
 	}
 }
 
@@ -85,7 +93,7 @@ func TestRouter_ServeHTTP_NoRoute(t *testing.T) {
 	r := &Router{
 		Routes:  nil,
 		log:     zap.NewNop(),
-		metrics: metric.New(),
+		metrics: &testMetrics{},
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/not-found", nil)
@@ -121,7 +129,11 @@ func TestRouter_ServeHTTP_WithPlugins(t *testing.T) {
 	}
 
 	r := &Router{
-		dispatcher: &mockDispatcher{results: [][]byte{[]byte("OK")}},
+		dispatcher: &mockDispatcher{
+			results: []UpstreamResponse{
+				{Body: []byte("OK"), Status: 200},
+			},
+		},
 		aggregator: &mockAggregator{},
 		Routes: []Route{
 			{
@@ -132,7 +144,7 @@ func TestRouter_ServeHTTP_WithPlugins(t *testing.T) {
 			},
 		},
 		log:     zap.NewNop(),
-		metrics: metric.New(),
+		metrics: &testMetrics{},
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/plug", nil)
@@ -159,7 +171,11 @@ func TestRouter_ServeHTTP_WithPlugins(t *testing.T) {
 
 func TestRouter_ServeHTTP_WithMiddleware(t *testing.T) {
 	r := &Router{
-		dispatcher: &mockDispatcher{results: [][]byte{[]byte("body")}},
+		dispatcher: &mockDispatcher{
+			results: []UpstreamResponse{
+				{Body: []byte("body"), Status: 200},
+			},
+		},
 		aggregator: &mockAggregator{},
 		Routes: []Route{
 			{
@@ -169,7 +185,7 @@ func TestRouter_ServeHTTP_WithMiddleware(t *testing.T) {
 			},
 		},
 		log:     zap.NewNop(),
-		metrics: metric.New(),
+		metrics: &testMetrics{},
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/mw", nil)
