@@ -3,16 +3,19 @@
   "name": "Tokka Gateway",
   "version": "0.0.1",
   "debug": false,
+
   "server": {
     "port": 7805,
     "timeout": 5000,
     "enable_metrics": true
   },
+
   "dashboard": {
     "enable": true,
     "port": 7806,
     "timeout": 5000
   },
+
   "plugins": [
     {
       "name": "ratelimit",
@@ -22,6 +25,7 @@
       }
     }
   ],
+
   "middlewares": [
     {
       "name": "recoverer",
@@ -40,18 +44,31 @@
       }
     }
   ],
+
   "routes": [
     {
       "path": "/api/users",
       "method": "GET",
-      "middlewares": [],
       "upstreams": [
         {
           "url": "http://user-service.local/v1/users",
           "method": "GET",
           "timeout": 3000,
           "forward_query_strings": ["*"],
-          "forward_headers": ["X-*"]
+          "forward_headers": ["X-*"],
+          "policy": {
+            "allowed_statuses": [200, 404],
+            "require_body": true,
+            "map_status_codes": {
+              "403": 404
+            },
+            "max_response_body_size": 4096,
+            "retry": {
+              "max_retries": 3,
+              "retry_on_statuses": [500, 502, 503],
+              "backoff_delay": "1s"
+            }
+          }
         },
         {
           "url": "http://profile-service.local/v1/details",
@@ -60,9 +77,9 @@
         }
       ],
       "aggregate": "merge",
-      "transform": "default",
       "allow_partial_results": true
     },
+
     {
       "path": "/api/domains",
       "method": "GET",
@@ -93,9 +110,9 @@
         }
       ],
       "aggregate": "merge",
-      "transform": "default",
       "allow_partial_results": false
     },
+
     {
       "path": "/api/domains",
       "method": "POST",
@@ -123,9 +140,9 @@
         }
       ],
       "aggregate": "array",
-      "transform": "default",
       "allow_partial_results": false
     },
+
     {
       "path": "/api/domains",
       "method": "DELETE",
@@ -162,7 +179,6 @@
         }
       ],
       "aggregate": "array",
-      "transform": "default",
       "allow_partial_results": false
     }
   ]

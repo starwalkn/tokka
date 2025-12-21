@@ -4,19 +4,22 @@ interface AdminConfig {
   enable: boolean;
   port: number;
 }
+
 interface PluginConfig {
   name: string;
   config: Record<string, any>;
 }
-interface BackendConfig {
+
+interface UpstreamConfig {
   url: string;
   method: string;
   timeout?: number;
 }
+
 interface RouteConfig {
   path: string;
   method: string;
-  backends: BackendConfig[];
+  backends: UpstreamConfig[];
   plugins: PluginConfig[];
   aggregate: string;
   transform: string;
@@ -26,6 +29,7 @@ interface ServerConfig {
   port: number;
   timeout: number;
 }
+
 interface GatewayConfig {
   schema?: string;
   name?: string;
