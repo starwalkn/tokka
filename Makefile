@@ -3,7 +3,7 @@ GOARCH ?= amd64
 PLUGIN_OUT=build/plugins
 MIDDLEWARE_OUT=build/middlewares
 
-.PHONY: all build plugins clean lint test compose
+.PHONY: all build plugins
 
 all: build plugins
 
@@ -21,15 +21,3 @@ plugins:
 
 	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=1 go build -buildmode=plugin -o $(PLUGIN_OUT)/camelify.so ./builtin/plugins/camelify/plugin.go
 	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=1 go build -buildmode=plugin -o $(PLUGIN_OUT)/snakeify.so ./builtin/plugins/snakeify/plugin.go
-
-clean:
-	rm -rf build
-
-lint:
-	golangci-lint run
-
-test:
-	go test -v -coverprofile=coverage.out ./...
-
-compose:
-	COMPOSE_BAKE=true docker compose up -d --build
