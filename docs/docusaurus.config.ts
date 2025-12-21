@@ -71,37 +71,37 @@ const config: Config = {
     },
 
     footer: {
-      style: "dark",
-      links: [
-        {
-          title: "Docs",
-          items: [
-            {
-              label: "Getting Started",
-              to: "/",
-            },
-          ],
-        },
-        {
-          title: "Project",
-          items: [
-            {
-              label: "GitHub",
-              href: "https://github.com/starwalkn/tokka",
-            },
-            {
-              label: "Issues",
-              href: "https://github.com/starwalkn/tokka/issues",
-            },
-          ],
-        },
-      ],
+      // style: "dark",
+      // links: [
+      //   {
+      //     title: "Docs",
+      //     items: [
+      //       {
+      //         label: "Getting Started",
+      //         to: "/",
+      //       },
+      //     ],
+      //   },
+      //   {
+      //     title: "Project",
+      //     items: [
+      //       {
+      //         label: "GitHub",
+      //         href: "https://github.com/starwalkn/tokka",
+      //       },
+      //       {
+      //         label: "Issues",
+      //         href: "https://github.com/starwalkn/tokka/issues",
+      //       },
+      //     ],
+      //   },
+      // ],
       copyright: `Copyright © ${new Date().getFullYear()} Tokka`,
     },
 
     prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
+      theme: prismThemes.nightOwlLight,
+      darkTheme: prismThemes.nightOwl,
     },
   } satisfies Preset.ThemeConfig,
 };

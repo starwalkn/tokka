@@ -174,18 +174,41 @@ article::after {
    Code
    ========================================================= */
 
-code {
-    font-family: "Monaspace Neon", "Fira Code", monospace;
-    background: hsla(220, 93%, 42%, 0.1);
+/* =========================================================
+      Unified code style (inline + blocks)
+      ========================================================= */
+
+/* Inline code */
+p code,
+li code,
+td code {
+    background-color: hsla(220, 93%, 42%, 0.1);
+    color: #1e1e1e;
     padding: 0.15em 0.35em;
-    border-radius: 4px;
+    border-radius: 6px;
+    border: none;
+    font-family: "Monaspace Neon", "Fira Code", monospace;
 }
 
-pre {
-    background: hsla(220, 93%, 42%, 0.1);
-    border-radius: 8px;
-    padding: 1.25rem;
-    box-shadow: none;
+/* Code blocks */
+pre,
+code[class*="language-"] {
+    background-color: hsla(220, 93%, 42%, 0.1) !important;
+    color: #1e1e1e;
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    border: none !important;
+    box-shadow: none !important;
+    overflow-x: auto;
+}
+
+/* Внутри pre код прозрачный, чтобы не было двойной заливки */
+pre code {
+    background: transparent !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    color: inherit;
+    font-family: inherit;
 }
 
 /* =========================================================
@@ -203,4 +226,12 @@ table {
 th {
     background: hsla(50, 30%, 92%);
     font-weight: 600;
+}
+
+.hero__title {
+    color: hsla(50, 25%, 94%) !important;
+}
+
+.hero__subtitle {
+    color: hsla(50, 25%, 94%) !important;
 }

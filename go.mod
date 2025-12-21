@@ -6,7 +6,6 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/VictoriaMetrics/metrics v1.40.2
 	github.com/oklog/ulid/v2 v2.1.1
-	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.27.1
 	gopkg.in/yaml.v3 v3.0.1
 )
