@@ -21,7 +21,7 @@ type GatewayConfig struct {
 	Debug       bool               `json:"debug" yaml:"debug" toml:"debug"`
 	Server      ServerConfig       `json:"server" yaml:"server" toml:"server"`
 	Dashboard   DashboardConfig    `json:"dashboard" yaml:"dashboard" toml:"dashboard"`
-	Plugins     []CorePluginConfig `json:"plugins" yaml:"plugins" toml:"plugins"`
+	Features    []FeatureConfig    `json:"features" yaml:"features" toml:"features"`
 	Middlewares []MiddlewareConfig `json:"middlewares" yaml:"middlewares" toml:"middlewares"`
 	Routes      []RouteConfig      `json:"routes" yaml:"routes" toml:"routes"`
 }
@@ -88,7 +88,7 @@ type MiddlewareConfig struct {
 	Override      bool           `json:"override" yaml:"override" toml:"override"`
 }
 
-type CorePluginConfig struct {
+type FeatureConfig struct {
 	Name   string         `json:"name" yaml:"name" toml:"name"`
 	Config map[string]any `json:"config" yaml:"config" toml:"config"`
 }
@@ -116,25 +116,6 @@ func LoadConfig(path string) GatewayConfig {
 		}
 	default:
 		log.Fatal("unknown config file extension:", filepath.Ext(path))
-	}
-
-	// Loading core-level plugins.
-	for _, pcfg := range cfg.Plugins {
-		p := createCorePlugin(pcfg.Name)
-		if p == nil {
-			log.Println("failed to create core plugin:", pcfg.Name)
-			continue
-		}
-
-		if err = p.Init(pcfg.Config); err != nil {
-			log.Fatal("failed to init core plugin:", err)
-		}
-
-		if err = p.Start(); err != nil {
-			log.Fatal("failed to start core plugin:", err)
-		}
-
-		registerActiveCorePlugin(pcfg.Name, p)
 	}
 
 	return cfg

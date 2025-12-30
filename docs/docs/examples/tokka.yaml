@@ -13,7 +13,7 @@ dashboard:
   port: 7806
   timeout: 5000
 
-plugins:
+features:
   - name: ratelimit
     config:
       limit: 10

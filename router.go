@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/starwalkn/tokka/internal/metric"
-	"github.com/starwalkn/tokka/internal/plugin/contract"
+	"github.com/starwalkn/tokka/internal/ratelimit"
 )
 
 type Router struct {
@@ -21,6 +21,8 @@ type Router struct {
 
 	log     *zap.Logger
 	metrics metric.Metrics
+
+	rateLimiter *ratelimit.RateLimit
 }
 
 type Route struct {
@@ -45,17 +47,32 @@ func newDefaultRouter(routesCount int, log *zap.Logger) *Router {
 		aggregator: &defaultAggregator{
 			log: log.Named("aggregator"),
 		},
-		Routes:  make([]Route, 0, routesCount),
-		log:     log,
-		metrics: metrics,
+		Routes:      make([]Route, 0, routesCount),
+		log:         log,
+		metrics:     metrics,
+		rateLimiter: nil,
 	}
 }
 
-func NewRouter(cfgs []RouteConfig, globalMiddlewareCfgs []MiddlewareConfig, log *zap.Logger) *Router {
+func NewRouter(cfgs []RouteConfig, globalMiddlewareCfgs []MiddlewareConfig, features []FeatureConfig, log *zap.Logger) *Router {
 	// --- global middlewares ---
 	globalMiddlewareIndices, globalMiddlewares := initGlobalMiddlewares(globalMiddlewareCfgs, log)
 
 	router := newDefaultRouter(len(cfgs), log)
+
+	for _, fcfg := range features {
+		switch fcfg.Name {
+		case "ratelimit":
+			rl := ratelimit.New(fcfg.Config)
+
+			err := rl.Start()
+			if err != nil {
+				log.Fatal("failed to start ratelimit feature", zap.Error(err))
+			}
+
+			router.rateLimiter = rl
+		}
+	}
 
 	for _, rcfg := range cfgs {
 		// --- route middlewares ---
@@ -233,18 +250,30 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer r.metrics.IncRequestsTotal()
 	defer r.metrics.UpdateRequestsDuration(start)
 
-	// --- 0. Global (core) plugins, e.g. rate limiter ---
-	if corePlugin := getActiveCorePlugin("ratelimit"); corePlugin != nil { //nolint:nolintlint,nestif
-		if rateLimiter, ok := corePlugin.(contract.RateLimit); ok {
-			ip := req.Header.Get("X-Forwarded-For")
-			if ip == "" {
-				ip = req.RemoteAddr
-			}
+	// // --- 0. Global (core) plugins, e.g. rate limiter ---
+	// if corePlugin := getActiveCorePlugin("ratelimit"); corePlugin != nil { //nolint:nolintlint,nestif
+	// 	if rateLimiter, ok := corePlugin.(contract.RateLimit); ok {
+	// 		ip := req.Header.Get("X-Forwarded-For")
+	// 		if ip == "" {
+	// 			ip = req.RemoteAddr
+	// 		}
 
-			if !rateLimiter.Allow(ip) {
-				http.Error(w, jsonErrRateLimitExceeded, http.StatusTooManyRequests)
-				return
-			}
+	// 		if !rateLimiter.Allow(ip) {
+	// 			http.Error(w, jsonErrRateLimitExceeded, http.StatusTooManyRequests)
+	// 			return
+	// 		}
+	// 	}
+	// }
+
+	if r.rateLimiter != nil {
+		ip := req.Header.Get("X-Forwarded-For")
+		if ip == "" {
+			ip = req.RemoteAddr
+		}
+
+		if !r.rateLimiter.Allow(ip) {
+			http.Error(w, jsonErrRateLimitExceeded, http.StatusTooManyRequests)
+			return
 		}
 	}
 
