@@ -1,6 +1,6 @@
 package tokka
 
-type JsonError struct {
+type JSONError struct {
 	Code      string
 	Upstream  string
 	RequestID string

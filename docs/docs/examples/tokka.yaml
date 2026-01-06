@@ -32,6 +32,16 @@ middlewares:
     config:
       enabled: true
 
+  - name: auth
+    path: /tokka/middlewares/auth.so
+    can_fail_on_load: false
+    config:
+      enabled: true
+      issuer: fake_issuer
+      audience: fake_audience
+      alg: HS256
+      hmac_secret: fake_hmac_secret
+
 routes:
   - path: /api/users
     method: GET
