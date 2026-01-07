@@ -3,7 +3,7 @@ package tokka
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
 	"slices"
@@ -42,18 +42,46 @@ func (u *httpUpstream) call(ctx context.Context, original *http.Request, origina
 
 	req, err := u.newRequest(ctx, original, originalBody)
 	if err != nil {
-		uresp.Err = err
+		uresp.Err = &UpstreamError{
+			Kind: UpstreamInternal,
+			Err:  err,
+		}
+
 		return uresp
 	}
 
 	hresp, err := u.client.Do(req)
 	if err != nil {
-		uresp.Err = err
+		kind := UpstreamConnection
+
+		if errors.Is(err, context.DeadlineExceeded) {
+			kind = UpstreamTimeout
+		}
+
+		if errors.Is(err, context.Canceled) {
+			kind = UpstreamCanceled
+		}
+
+		uresp.Err = &UpstreamError{
+			Kind: kind,
+			Err:  err,
+		}
+
 		return uresp
 	}
 	defer hresp.Body.Close()
 
 	uresp.Status = hresp.StatusCode
+
+	if hresp.StatusCode >= http.StatusInternalServerError {
+		uresp.Err = &UpstreamError{
+			Kind:       UpstreamBadStatus,
+			StatusCode: hresp.StatusCode,
+		}
+
+		return uresp
+	}
+
 	uresp.Headers = hresp.Header.Clone()
 
 	var reader io.Reader = hresp.Body
@@ -63,12 +91,19 @@ func (u *httpUpstream) call(ctx context.Context, original *http.Request, origina
 
 	body, err := io.ReadAll(reader)
 	if err != nil {
-		uresp.Err = err
+		uresp.Err = &UpstreamError{
+			Kind: UpstreamReadError,
+			Err:  err,
+		}
+
 		return uresp
 	}
 
 	if u.policy.MaxResponseBodySize > 0 && int64(len(body)) > u.policy.MaxResponseBodySize {
-		uresp.Err = fmt.Errorf("response body larger than limit of %d bytes", u.policy.MaxResponseBodySize)
+		uresp.Err = &UpstreamError{
+			Kind: UpstreamBodyTooLarge,
+		}
+
 		return uresp
 	}
 
@@ -83,7 +118,11 @@ func (u *httpUpstream) Call(ctx context.Context, original *http.Request, origina
 	for attempt := 0; attempt <= retryPolicy.MaxRetries; attempt++ {
 		select {
 		case <-ctx.Done():
-			resp.Err = ctx.Err()
+			resp.Err = &UpstreamError{
+				Kind: UpstreamCanceled,
+				Err:  ctx.Err(),
+			}
+
 			return resp
 		default:
 			resp = u.call(ctx, original, originalBody)
@@ -95,7 +134,11 @@ func (u *httpUpstream) Call(ctx context.Context, original *http.Request, origina
 				select {
 				case <-time.After(retryPolicy.BackoffDelay):
 				case <-ctx.Done():
-					resp.Err = ctx.Err()
+					resp.Err = &UpstreamError{
+						Kind: UpstreamCanceled,
+						Err:  ctx.Err(),
+					}
+
 					return resp
 				}
 

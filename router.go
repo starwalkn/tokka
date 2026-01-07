@@ -280,7 +280,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 
 		if !r.rateLimiter.Allow(ip) {
-			http.Error(w, jsonErrRateLimitExceeded, http.StatusTooManyRequests)
+			WriteError(w, ErrorCodeRateLimitExceeded, "rate limit exceeded", req.Header.Get("X-Request-ID"), http.StatusTooManyRequests)
 			return
 		}
 	}
@@ -298,6 +298,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var routeHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		tctx := newContext(req) // Tokka context.
 
+		requestID := req.Header.Get("X-Request-ID")
+
 		// Request-phase plugins.
 		for _, p := range rt.Plugins {
 			if p.Type() != PluginTypeRequest {
@@ -312,14 +314,16 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		// Upstream dispatch.
 		responses := r.dispatcher.dispatch(rt, req)
 		if responses == nil {
+			// Currently, responses can only be nil if the body size limit is exceeded or body read fails.
 			r.log.Error("request body too large", zap.Int("max_body_size", maxBodySize))
-			http.Error(w, jsonErrPayloadTooLarge, http.StatusRequestEntityTooLarge)
+			WriteError(w, ErrorCodePayloadTooLarge, "request body too large", requestID, http.StatusRequestEntityTooLarge)
 
 			return
 		}
 
 		r.log.Debug("dispatched responses", zap.Any("responses", responses))
 
+		// Aggregate upstream responses.
 		aggregated := r.aggregator.aggregate(responses, rt.Aggregate, rt.AllowPartialResults)
 
 		r.log.Debug("aggregated responses",
@@ -327,10 +331,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			zap.Any("aggregated", aggregated),
 		)
 
+		status := http.StatusOK
+		switch {
+		case len(aggregated.Errors) > 0 && !aggregated.Partial:
+			status = http.StatusInternalServerError
+		case aggregated.Partial:
+			status = http.StatusPartialContent
+		}
+
 		// Response-phase plugins.
 		resp := &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewReader(aggregated)),
+			StatusCode: status,
+			Body:       io.NopCloser(bytes.NewReader(aggregated.Data)),
 			Header:     make(http.Header),
 		}
 
