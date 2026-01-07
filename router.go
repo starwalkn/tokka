@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/starwalkn/tokka/internal/metric"
-	"github.com/starwalkn/tokka/internal/plugin/contract"
+	"github.com/starwalkn/tokka/internal/ratelimit"
 )
 
 type Router struct {
@@ -21,6 +21,8 @@ type Router struct {
 
 	log     *zap.Logger
 	metrics metric.Metrics
+
+	rateLimiter *ratelimit.RateLimit
 }
 
 type Route struct {
@@ -35,7 +37,7 @@ type Route struct {
 }
 
 func newDefaultRouter(routesCount int, log *zap.Logger) *Router {
-	metrics := metric.NewVictoria()
+	metrics := metric.NewNop()
 
 	return &Router{
 		dispatcher: &defaultDispatcher{
@@ -45,20 +47,58 @@ func newDefaultRouter(routesCount int, log *zap.Logger) *Router {
 		aggregator: &defaultAggregator{
 			log: log.Named("aggregator"),
 		},
-		Routes:  make([]Route, 0, routesCount),
-		log:     log,
-		metrics: metrics,
+		Routes:      make([]Route, 0, routesCount),
+		log:         log,
+		metrics:     metrics,
+		rateLimiter: nil,
 	}
 }
 
-func NewRouter(cfgs []RouteConfig, globalMiddlewareCfgs []MiddlewareConfig, log *zap.Logger) *Router {
-	// --- global middlewares ---
-	globalMiddlewareIndices, globalMiddlewares := initGlobalMiddlewares(globalMiddlewareCfgs, log)
+type RouterConfigSet struct {
+	Version     string
+	Routes      []RouteConfig
+	Middlewares []MiddlewareConfig
+	Features    []FeatureConfig
+	Metrics     MetricsConfig
+}
 
-	router := newDefaultRouter(len(cfgs), log)
+func NewRouter(routerConfigSet RouterConfigSet, log *zap.Logger) *Router {
+	var (
+		routeConfigs            = routerConfigSet.Routes
+		globalMiddlewareConfigs = routerConfigSet.Middlewares
+		featureConfigs          = routerConfigSet.Features
+		metricsConfig           = routerConfigSet.Metrics
+	)
 
-	for _, rcfg := range cfgs {
-		// --- route middlewares ---
+	// Global middlewares.
+	globalMiddlewareIndices, globalMiddlewares := initGlobalMiddlewares(globalMiddlewareConfigs, log)
+
+	router := newDefaultRouter(len(routeConfigs), log)
+
+	if metricsConfig.Enabled {
+		switch metricsConfig.Provider {
+		case "victoriametrics":
+			router.metrics = metric.NewVictoria()
+		default:
+			router.metrics = metric.NewNop()
+		}
+	}
+
+	for _, fcfg := range featureConfigs {
+		//nolint:gocritic // for the future
+		switch fcfg.Name {
+		case "ratelimit":
+			router.rateLimiter = ratelimit.New(fcfg.Config)
+
+			err := router.rateLimiter.Start()
+			if err != nil {
+				log.Fatal("failed to start ratelimit feature", zap.Error(err))
+			}
+		}
+	}
+
+	for _, rcfg := range routeConfigs {
+		// Per-route middlewares.
 		routeMiddlewares := make([]Middleware, 0, len(rcfg.Middlewares))
 		for _, mcfg := range rcfg.Middlewares {
 			soMiddleware := loadMiddlewareFromSO(mcfg.Path, mcfg.Config, log)
@@ -233,18 +273,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer r.metrics.IncRequestsTotal()
 	defer r.metrics.UpdateRequestsDuration(start)
 
-	// --- 0. Global (core) plugins, e.g. rate limiter ---
-	if corePlugin := getActiveCorePlugin("ratelimit"); corePlugin != nil { //nolint:nolintlint,nestif
-		if rateLimiter, ok := corePlugin.(contract.RateLimit); ok {
-			ip := req.Header.Get("X-Forwarded-For")
-			if ip == "" {
-				ip = req.RemoteAddr
-			}
+	if r.rateLimiter != nil {
+		ip := req.Header.Get("X-Forwarded-For")
+		if ip == "" {
+			ip = req.RemoteAddr
+		}
 
-			if !rateLimiter.Allow(ip) {
-				http.Error(w, jsonErrRateLimitExceeded, http.StatusTooManyRequests)
-				return
-			}
+		if !r.rateLimiter.Allow(ip) {
+			WriteError(w, ErrorCodeRateLimitExceeded, "rate limit exceeded", req.Header.Get("X-Request-ID"), http.StatusTooManyRequests)
+			return
 		}
 	}
 
@@ -261,7 +298,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var routeHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		tctx := newContext(req) // Tokka context.
 
-		// --- 1. Request-phase plugins ---
+		requestID := req.Header.Get("X-Request-ID")
+
+		// Request-phase plugins.
 		for _, p := range rt.Plugins {
 			if p.Type() != PluginTypeRequest {
 				continue
@@ -272,17 +311,19 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			p.Execute(tctx)
 		}
 
-		// --- 2. Upstream dispatch ---
+		// Upstream dispatch.
 		responses := r.dispatcher.dispatch(rt, req)
 		if responses == nil {
+			// Currently, responses can only be nil if the body size limit is exceeded or body read fails.
 			r.log.Error("request body too large", zap.Int("max_body_size", maxBodySize))
-			http.Error(w, jsonErrPayloadTooLarge, http.StatusRequestEntityTooLarge)
+			WriteError(w, ErrorCodePayloadTooLarge, "request body too large", requestID, http.StatusRequestEntityTooLarge)
 
 			return
 		}
 
 		r.log.Debug("dispatched responses", zap.Any("responses", responses))
 
+		// Aggregate upstream responses.
 		aggregated := r.aggregator.aggregate(responses, rt.Aggregate, rt.AllowPartialResults)
 
 		r.log.Debug("aggregated responses",
@@ -290,10 +331,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			zap.Any("aggregated", aggregated),
 		)
 
-		// --- 3. Response-phase plugins ---
+		status := http.StatusOK
+		switch {
+		case len(aggregated.Errors) > 0 && !aggregated.Partial:
+			status = http.StatusInternalServerError
+		case aggregated.Partial:
+			status = http.StatusPartialContent
+		}
+
+		// Response-phase plugins.
 		resp := &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewReader(aggregated)),
+			StatusCode: status,
+			Body:       io.NopCloser(bytes.NewReader(aggregated.Data)),
 			Header:     make(http.Header),
 		}
 
@@ -310,7 +359,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 		r.metrics.IncResponsesTotal(tctx.Response().StatusCode) //nolint:bodyclose // body closes in copyResponse
 
-		// --- 4. Write final output ---
+		// Write final output.
 		copyResponse(w, tctx.Response()) //nolint:bodyclose // body closes in copyResponse
 	})
 

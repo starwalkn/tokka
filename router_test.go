@@ -21,12 +21,20 @@ func (m *mockDispatcher) dispatch(_ *Route, _ *http.Request) []UpstreamResponse 
 
 type mockAggregator struct{}
 
-func (m *mockAggregator) aggregate(responses []UpstreamResponse, _ string, _ bool) []byte {
+func (m *mockAggregator) aggregate(responses []UpstreamResponse, _ string, _ bool) AggregatedResponse {
 	var out [][]byte
+
 	for _, r := range responses {
 		out = append(out, r.Body)
 	}
-	return bytes.Join(out, []byte(","))
+
+	aggregationResponse := AggregatedResponse{
+		Data:    bytes.Join(out, []byte(",")),
+		Errors:  nil,
+		Partial: false,
+	}
+
+	return aggregationResponse
 }
 
 type mockPlugin struct {

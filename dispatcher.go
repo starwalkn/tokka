@@ -52,12 +52,12 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) []Ups
 
 			upstreamPolicy := u.Policy()
 
-			resp := u.callWithRetry(original.Context(), original, originalBody, upstreamPolicy.RetryPolicy)
+			resp := u.Call(original.Context(), original, originalBody, upstreamPolicy.RetryPolicy)
 			if resp.Err != nil {
 				d.metrics.IncFailedRequestsTotal(metric.FailReasonUpstreamError)
 				d.log.Error("cannot call upstream",
 					zap.String("name", u.Name()),
-					zap.Error(resp.Err),
+					zap.Error(resp.Err.Unwrap()),
 				)
 			}
 
@@ -81,7 +81,14 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) []Ups
 
 			if len(errs) > 0 {
 				d.metrics.IncFailedRequestsTotal(metric.FailReasonPolicyViolation)
-				resp.Err = errors.Join(errs...)
+
+				if resp.Err == nil {
+					resp.Err = &UpstreamError{
+						Err: errors.Join(errs...),
+					}
+				} else {
+					resp.Err.Err = errors.Join(resp.Err.Err, errors.Join(errs...))
+				}
 			}
 
 			results[i] = *resp

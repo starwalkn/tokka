@@ -21,15 +21,20 @@ type GatewayConfig struct {
 	Debug       bool               `json:"debug" yaml:"debug" toml:"debug"`
 	Server      ServerConfig       `json:"server" yaml:"server" toml:"server"`
 	Dashboard   DashboardConfig    `json:"dashboard" yaml:"dashboard" toml:"dashboard"`
-	Plugins     []CorePluginConfig `json:"plugins" yaml:"plugins" toml:"plugins"`
+	Features    []FeatureConfig    `json:"features" yaml:"features" toml:"features"`
 	Middlewares []MiddlewareConfig `json:"middlewares" yaml:"middlewares" toml:"middlewares"`
 	Routes      []RouteConfig      `json:"routes" yaml:"routes" toml:"routes"`
 }
 
 type ServerConfig struct {
-	Port          int  `json:"port" yaml:"port" toml:"port"`
-	Timeout       int  `json:"timeout" yaml:"timeout" toml:"timeout"`
-	EnableMetrics bool `json:"enable_metrics" yaml:"enable_metrics" toml:"enable_metrics"`
+	Port    int           `json:"port" yaml:"port" toml:"port"`
+	Timeout int           `json:"timeout" yaml:"timeout" toml:"timeout"`
+	Metrics MetricsConfig `json:"metrics" yaml:"metrics" toml:"metrics"`
+}
+
+type MetricsConfig struct {
+	Enabled  bool   `json:"enabled" yaml:"enabled" toml:"enabled"`
+	Provider string `json:"provider" yaml:"provider" toml:"provider"`
 }
 
 type DashboardConfig struct {
@@ -88,7 +93,7 @@ type MiddlewareConfig struct {
 	Override      bool           `json:"override" yaml:"override" toml:"override"`
 }
 
-type CorePluginConfig struct {
+type FeatureConfig struct {
 	Name   string         `json:"name" yaml:"name" toml:"name"`
 	Config map[string]any `json:"config" yaml:"config" toml:"config"`
 }
@@ -116,25 +121,6 @@ func LoadConfig(path string) GatewayConfig {
 		}
 	default:
 		log.Fatal("unknown config file extension:", filepath.Ext(path))
-	}
-
-	// Loading core-level plugins.
-	for _, pcfg := range cfg.Plugins {
-		p := createCorePlugin(pcfg.Name)
-		if p == nil {
-			log.Println("failed to create core plugin:", pcfg.Name)
-			continue
-		}
-
-		if err = p.Init(pcfg.Config); err != nil {
-			log.Fatal("failed to init core plugin:", err)
-		}
-
-		if err = p.Start(); err != nil {
-			log.Fatal("failed to start core plugin:", err)
-		}
-
-		registerActiveCorePlugin(pcfg.Name, p)
 	}
 
 	return cfg
