@@ -27,14 +27,15 @@ type Router struct {
 }
 
 type Route struct {
-	Path                string
-	Method              string
-	Upstreams           []Upstream
-	Aggregate           string
-	Transform           string
-	AllowPartialResults bool
-	Plugins             []Plugin
-	Middlewares         []Middleware
+	Path                 string
+	Method               string
+	Upstreams            []Upstream
+	Aggregate            string
+	Transform            string
+	AllowPartialResults  bool
+	MaxParallelUpstreams int64
+	Plugins              []Plugin
+	Middlewares          []Middleware
 }
 
 func newDefaultRouter(routesCount int, log *zap.Logger) *Router {
@@ -135,14 +136,15 @@ func NewRouter(routerConfigSet RouterConfigSet, log *zap.Logger) *Router {
 		middlewares := append(globalMiddlewares, routeMiddlewares...) //nolint:gocritic // we do not want to modify globalMiddlewares here
 
 		route := Route{
-			Path:                rcfg.Path,
-			Method:              rcfg.Method,
-			Upstreams:           initUpstreams(rcfg.Upstreams),
-			Aggregate:           rcfg.Aggregate,
-			Transform:           rcfg.Transform,
-			AllowPartialResults: rcfg.AllowPartialResults,
-			Plugins:             initPlugins(rcfg.Plugins, log),
-			Middlewares:         middlewares,
+			Path:                 rcfg.Path,
+			Method:               rcfg.Method,
+			Upstreams:            initUpstreams(rcfg.Upstreams),
+			Aggregate:            rcfg.Aggregate,
+			Transform:            rcfg.Transform,
+			AllowPartialResults:  rcfg.AllowPartialResults,
+			MaxParallelUpstreams: rcfg.MaxParallelUpstreams,
+			Plugins:              initPlugins(rcfg.Plugins, log),
+			Middlewares:          middlewares,
 		}
 
 		router.Routes = append(router.Routes, route)
@@ -260,16 +262,17 @@ func initPlugins(cfgs []PluginConfig, log *zap.Logger) []Plugin {
 //
 // 1. Rate limiting (if enabled) – rejects requests exceeding allowed limits.
 // 2. Route matching – finds a Route that matches the request method and path.
-//    - If no route is found, responds with 404.
+//   - If no route is found, responds with 404.
+//
 // 3. Middleware execution – wraps the route handler with all configured middlewares in reverse order.
 // 4. Request-phase plugins – executed before upstream dispatch. Can modify the request context.
 // 5. Upstream dispatch – sends the request to all configured upstreams via the dispatcher.
-//    - If the dispatch fails (e.g., body too large), responds with an appropriate error.
-// 6. Response aggregation – combines multiple upstream responses according to the route's aggregation strategy
-//    ("merge" or "array") and the allowPartialResults flag.
-// 7. Response-phase plugins – executed after aggregation, can modify headers or the response body.
-// 8. Response writing – writes the aggregated response, appropriate HTTP status code, and headers
-//    to the client.
+//   - If the dispatch fails (e.g., body too large), responds with an appropriate error.
+//     6. Response aggregation – combines multiple upstream responses according to the route's aggregation strategy
+//     ("merge" or "array") and the allowPartialResults flag.
+//     7. Response-phase plugins – executed after aggregation, can modify headers or the response body.
+//     8. Response writing – writes the aggregated response, appropriate HTTP status code, and headers
+//     to the client.
 //
 // Status code determination:
 //

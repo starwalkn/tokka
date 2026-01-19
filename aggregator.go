@@ -27,23 +27,11 @@ type defaultAggregator struct {
 	log *zap.Logger
 }
 
-// aggregate combines multiple upstream responses according to the specified strategy.
-//
-// If there is only one upstream response, it is returned as-is via rawResponse,
-// and the aggregation strategy (mode) is ignored.
-//
-// If there are multiple responses, the aggregation strategy determines how they
-// are combined:
-//   - "merge": merge the JSON objects into a single object
-//   - "array": combine the responses into a JSON array
-//
-// If the strategy is unknown, an empty AggregatedResponse is returned and an error
-// is logged. Upstream errors are handled according to allowPartialResults:
-//
-//   - allowPartialResults = true: successful responses are aggregated, errors are
-//     included in the Errors field, Partial = true
-//   - allowPartialResults = false: any upstream error or JSON parse error results
-//     in an immediate AggregatedResponse containing a mapped error and Partial = false
+// aggregate combines multiple upstream responses based on the route's strategy.
+// Single responses are returned as-is. Multiple responses are aggregated either
+// by merging JSON objects ("merge") or creating a JSON array ("array").
+// Upstream errors respect allowPartialResults: partial results may be included
+// if allowed; otherwise a single error response is returned.
 func (a *defaultAggregator) aggregate(responses []UpstreamResponse, mode string, allowPartialResults bool) AggregatedResponse {
 	if len(responses) == 1 {
 		return a.rawResponse(responses)

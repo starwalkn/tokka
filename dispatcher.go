@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/starwalkn/tokka/internal/metric"
 )
@@ -24,32 +25,12 @@ type defaultDispatcher struct {
 	metrics metric.Metrics
 }
 
-// dispatch sends the incoming request to all upstreams configured for the given route
-// and collects their responses. It applies the upstream policies and metrics, and returns
-// a slice of UpstreamResponse.
-//
-// The dispatching pipeline is as follows:
-//
-// 1. Reads and limits the request body to `maxBodySize` (default 5MB).
-//    - If the body exceeds the limit, returns nil to indicate failure.
-// 2. Launches a goroutine for each upstream, sending the request concurrently.
-// 3. Each upstream response is validated against its policy:
-//    - AllowedStatuses: the response status must be in the allowed list.
-//    - RequireBody: the response must have a non-empty body if required.
-//    - MapStatusCodes: optionally remaps status codes.
-// 4. Any policy violations are converted to UpstreamError and metrics are updated.
-// 5. All upstream responses are written to a preallocated slice at their respective index.
-// 6. The dispatcher waits for all goroutines to complete before returning the results.
-//
-// Notes / considerations:
-//
-// - This dispatcher reads the full request body into memory for each upstream.
-//   Large bodies or many upstreams may increase memory usage significantly.
-// - Returns nil for body read errors or size violations, which must be checked by the caller.
-// - Goroutines write directly to a shared slice; current implementation is safe because
-//   each index is unique, but panics in goroutines may affect stability.
-// - No global timeout is applied; dispatcher relies on the request context for cancellation.
-// - Errors are aggregated using errors.Join, which may become large for multiple violations.
+// dispatch sends the incoming HTTP request to all upstreams configured for the given route.
+// It reads and limits the request body, launches concurrent requests to upstreams using
+// a semaphore to control parallelism, applies upstream policies (like allowed statuses,
+// required body, status code mapping, max response size), updates metrics, and collects
+// the responses into a slice. Any policy violations or request errors are wrapped in
+// UpstreamError. The dispatcher waits for all upstream requests to complete before returning.
 func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) []UpstreamResponse {
 	results := make([]UpstreamResponse, len(route.Upstreams))
 
@@ -67,7 +48,10 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) []Ups
 		return nil
 	}
 
-	var wg sync.WaitGroup
+	var (
+		wg  = sync.WaitGroup{}
+		sem = semaphore.NewWeighted(route.MaxParallelUpstreams)
+	)
 
 	for i, u := range route.Upstreams {
 		wg.Add(1)
@@ -75,9 +59,25 @@ func (d *defaultDispatcher) dispatch(route *Route, original *http.Request) []Ups
 		go func(i int, u Upstream, originalBody []byte) {
 			defer wg.Done()
 
+			ctx := original.Context()
+
+			if err := sem.Acquire(ctx, 1); err != nil {
+				d.log.Error("cannot acquire semaphore", zap.Error(err))
+
+				results[i] = UpstreamResponse{
+					Err: &UpstreamError{
+						Kind: UpstreamInternal,
+						Err:  fmt.Errorf("semaphore acquire failed: %w", err),
+					},
+				}
+
+				return
+			}
+			defer sem.Release(1)
+
 			upstreamPolicy := u.Policy()
 
-			resp := u.Call(original.Context(), original, originalBody, upstreamPolicy.RetryPolicy)
+			resp := u.Call(ctx, original, originalBody, upstreamPolicy.RetryPolicy)
 			if resp.Err != nil {
 				d.metrics.IncFailedRequestsTotal(metric.FailReasonUpstreamError)
 				d.log.Error("upstream request failed",

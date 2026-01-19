@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -46,14 +47,15 @@ type DashboardConfig struct {
 }
 
 type RouteConfig struct {
-	Path                string             `json:"path" yaml:"path" toml:"path"`
-	Method              string             `json:"method" yaml:"method" toml:"method"`
-	Plugins             []PluginConfig     `json:"plugins" yaml:"plugins" toml:"plugins"`
-	Middlewares         []MiddlewareConfig `json:"middlewares" yaml:"middlewares" toml:"middlewares"`
-	Upstreams           []UpstreamConfig   `json:"upstreams" yaml:"upstreams" toml:"upstreams"`
-	Aggregate           string             `json:"aggregate" yaml:"aggregate" toml:"aggregate"`
-	Transform           string             `json:"transform" yaml:"transform" toml:"transform"`
-	AllowPartialResults bool               `json:"allow_partial_results" yaml:"allow_partial_results" toml:"allow_partial_results"`
+	Path                 string             `json:"path" yaml:"path" toml:"path"`
+	Method               string             `json:"method" yaml:"method" toml:"method"`
+	Plugins              []PluginConfig     `json:"plugins" yaml:"plugins" toml:"plugins"`
+	Middlewares          []MiddlewareConfig `json:"middlewares" yaml:"middlewares" toml:"middlewares"`
+	Upstreams            []UpstreamConfig   `json:"upstreams" yaml:"upstreams" toml:"upstreams"`
+	Aggregate            string             `json:"aggregate" yaml:"aggregate" toml:"aggregate"`
+	Transform            string             `json:"transform" yaml:"transform" toml:"transform"`
+	AllowPartialResults  bool               `json:"allow_partial_results" yaml:"allow_partial_results" toml:"allow_partial_results"`
+	MaxParallelUpstreams int64              `json:"max_parallel_upstreams" yaml:"max_parallel_upstreams" toml:"max_parallel_upstreams"`
 }
 
 type UpstreamConfig struct {
@@ -135,6 +137,10 @@ func ensureDefaults(cfg GatewayConfig) GatewayConfig {
 	}
 
 	for i := range cfg.Routes {
+		if cfg.Routes[i].MaxParallelUpstreams < 1 {
+			cfg.Routes[i].MaxParallelUpstreams = 2 * int64(runtime.NumCPU()) //nolint:mnd // shut up mnd
+		}
+
 		for j := range cfg.Routes[i].Upstreams {
 			if cfg.Routes[i].Upstreams[j].Timeout == 0 {
 				cfg.Routes[i].Upstreams[j].Timeout = defaultUpstreamTimeout

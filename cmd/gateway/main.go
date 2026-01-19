@@ -6,9 +6,8 @@ import (
 	"net/http"
 	"os"
 
-	"go.uber.org/zap"
-
 	"github.com/VictoriaMetrics/metrics"
+	"go.uber.org/zap"
 
 	"github.com/starwalkn/tokka"
 	"github.com/starwalkn/tokka/dashboard"
@@ -43,6 +42,7 @@ func main() {
 	if cfg.Server.Metrics.Enabled {
 		mux.Handle("/metrics", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			metrics.WritePrometheus(w, true)
+			// promhttp.Handler()
 		}))
 	}
 
