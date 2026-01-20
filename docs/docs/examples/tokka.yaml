@@ -5,7 +5,7 @@ debug: false
 
 server:
   port: 7805
-  timeout: 5000
+  timeout: 20s
   metrics:
     enabled: true
     provider: victoriametrics
@@ -13,7 +13,7 @@ server:
 dashboard:
   enable: true
   port: 7806
-  timeout: 5000
+  timeout: 30s
 
 features:
   - name: ratelimit
@@ -47,14 +47,16 @@ middlewares:
 routes:
   - path: /api/users
     method: GET
+    aggregation:
+      strategy: merge
+      allow_partial_results: true
+    max_parallel_upstreams: 1
     upstreams:
       - url: http://user-service.local/v1/users
         method: GET
-        timeout: 3000
-        forward_query_strings:
-          - "*"
-        forward_headers:
-          - "X-*"
+        timeout: 3s
+        forward_query_strings: ["*"]
+        forward_headers: ["X-*"]
         policy:
           allowed_statuses: [200, 404]
           require_body: true
@@ -65,18 +67,25 @@ routes:
             max_retries: 3
             retry_on_statuses: [500, 502, 503]
             backoff_delay: 1s
-
+          circuit_breaker:
+            enabled: true
+            max_failures: 5
+            reset_timeout: 2s
       - url: http://profile-service.local/v1/details
         method: GET
-        forward_headers:
-          - "X-Request-ID"
-    aggregation:
-      strategy: merge
-      allow_partial_results: true
-    max_parallel_upstreams: 1
+        forward_headers: ["X-Request-ID"]
+        policy:
+          circuit_breaker:
+            enabled: true
+            max_failures: 5
+            reset_timeout: 2s
 
   - path: /api/domains
     method: GET
+    aggregation:
+      strategy: merge
+      allow_partial_results: false
+    max_parallel_upstreams: 3
     middlewares:
       - name: logger
         path: /tokka/middlewares/logger.so
@@ -86,26 +95,30 @@ routes:
     upstreams:
       - url: http://domain-service.local/v1/domains
         method: GET
-        timeout: 3000
-        forward_query_strings:
-          - "*"
-        forward_headers:
-          - "X-For*"
-
+        timeout: 3s
+        forward_query_strings: ["*"]
+        forward_headers: ["X-For*"]
+        policy:
+          circuit_breaker:
+            enabled: true
+            max_failures: 5
+            reset_timeout: 2s
       - url: http://profile-service.local/v1/details
         method: GET
-        timeout: 2000
-        forward_query_strings:
-          - "id"
-        forward_headers:
-          - "X-For"
-    aggregation:
-      strategy: merge
-      allow_partial_results: false
-    max_parallel_upstreams: 3
+        timeout: 2s
+        forward_query_strings: ["id"]
+        forward_headers: ["X-For"]
+        policy:
+          circuit_breaker:
+            enabled: true
+            max_failures: 5
+            reset_timeout: 2s
 
   - path: /api/domains
     method: POST
+    aggregation:
+      strategy: array
+      allow_partial_results: false
     middlewares:
       - name: compressor
         path: /tokka/middlewares/compressor.so
@@ -113,20 +126,18 @@ routes:
         config:
           enabled: true
           alg: gzip
-    plugins: []
     upstreams:
       - url: http://domain-service.local/v1/domains
         method: POST
-        timeout: 1000
-
+        timeout: 1s
       - url: http://profile-service.local/v1/details
         method: GET
-    aggregation:
-      strategy: array
-      allow_partial_results: false
 
   - path: /api/domains
     method: DELETE
+    aggregation:
+      strategy: array
+      allow_partial_results: false
     middlewares:
       - name: compressor
         path: /tokka/middlewares/compressor.so
@@ -134,21 +145,15 @@ routes:
         config:
           enabled: true
           alg: deflate
-
       - name: recoverer
         path: /tokka/middlewares/recoverer.so
         can_fail_on_load: true
         override: true
         config:
           enabled: false
-    plugins: []
     upstreams:
       - url: http://domain-service.local/v1/domains
         method: DELETE
-        timeout: 2000
-
+        timeout: 2s
       - url: http://profile-service.local/v1/details
         method: GET
-    aggregation:
-      strategy: array
-      allow_partial_results: false

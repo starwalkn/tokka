@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"time"
 
 	"go.uber.org/zap"
@@ -36,24 +35,6 @@ type Route struct {
 	Middlewares          []Middleware
 }
 
-func newDefaultRouter(routesCount int, log *zap.Logger) *Router {
-	metrics := metric.NewNop()
-
-	return &Router{
-		dispatcher: &defaultDispatcher{
-			log:     log.Named("dispatcher"),
-			metrics: metrics,
-		},
-		aggregator: &defaultAggregator{
-			log: log.Named("aggregator"),
-		},
-		Routes:      make([]Route, 0, routesCount),
-		log:         log,
-		metrics:     metrics,
-		rateLimiter: nil,
-	}
-}
-
 type RouterConfigSet struct {
 	Version     string
 	Routes      []RouteConfig
@@ -70,10 +51,7 @@ func NewRouter(routerConfigSet RouterConfigSet, log *zap.Logger) *Router {
 		metricsConfig           = routerConfigSet.Metrics
 	)
 
-	// Global middlewares.
-	globalMiddlewareIndices, globalMiddlewares := initGlobalMiddlewares(globalMiddlewareConfigs, log)
-
-	router := newDefaultRouter(len(routeConfigs), log)
+	router := initMinimalRouter(len(routeConfigs), log)
 
 	if metricsConfig.Enabled {
 		switch metricsConfig.Provider {
@@ -97,159 +75,14 @@ func NewRouter(routerConfigSet RouterConfigSet, log *zap.Logger) *Router {
 		}
 	}
 
+	// Global middlewares.
+	globalMiddlewareIndices, globalMiddlewares := initGlobalMiddlewares(globalMiddlewareConfigs, log)
+
 	for _, rcfg := range routeConfigs {
-		// Per-route middlewares.
-		routeMiddlewares := make([]Middleware, 0, len(rcfg.Middlewares))
-		for _, mcfg := range rcfg.Middlewares {
-			soMiddleware := loadMiddlewareFromSO(mcfg.Path, mcfg.Config, log)
-			if soMiddleware == nil {
-				log.Error(
-					"cannot load middleware from .so",
-					zap.String("name", mcfg.Name),
-				)
-
-				if !mcfg.CanFailOnLoad {
-					panic("cannot load middleware from .so")
-				}
-
-				continue
-			}
-
-			log.Info(
-				"middleware initialized",
-				zap.String("name", soMiddleware.Name()),
-				zap.String("route", rcfg.Method+" "+rcfg.Path),
-			)
-
-			if mcfg.Override {
-				if idx, ok := globalMiddlewareIndices[soMiddleware.Name()]; ok {
-					globalMiddlewares[idx] = soMiddleware
-					continue
-				}
-			}
-
-			routeMiddlewares = append(routeMiddlewares, soMiddleware)
-		}
-
-		middlewares := append(globalMiddlewares, routeMiddlewares...) //nolint:gocritic // we do not want to modify globalMiddlewares here
-
-		route := Route{
-			Path:                 rcfg.Path,
-			Method:               rcfg.Method,
-			Upstreams:            initUpstreams(rcfg.Upstreams),
-			Aggregation:          rcfg.Aggregation,
-			MaxParallelUpstreams: rcfg.MaxParallelUpstreams,
-			Plugins:              initPlugins(rcfg.Plugins, log),
-			Middlewares:          middlewares,
-		}
-
-		router.Routes = append(router.Routes, route)
+		router.Routes = append(router.Routes, initRoute(rcfg, globalMiddlewares, globalMiddlewareIndices, log))
 	}
 
 	return router
-}
-
-func initGlobalMiddlewares(cfgs []MiddlewareConfig, log *zap.Logger) (map[string]int, []Middleware) {
-	globalMiddlewareIndices := make(map[string]int)
-	globalMiddlewares := make([]Middleware, 0, len(cfgs))
-
-	for i, cfg := range cfgs {
-		soMiddleware := loadMiddlewareFromSO(cfg.Path, cfg.Config, log)
-		if soMiddleware == nil {
-			log.Error(
-				"cannot load middleware from .so",
-				zap.String("name", cfg.Name),
-			)
-
-			if !cfg.CanFailOnLoad {
-				panic("cannot load middleware from .so")
-			}
-
-			continue
-		}
-
-		globalMiddlewares = append(globalMiddlewares, soMiddleware)
-		globalMiddlewareIndices[soMiddleware.Name()] = i
-	}
-
-	return globalMiddlewareIndices, globalMiddlewares
-}
-
-func initUpstreams(cfgs []UpstreamConfig) []Upstream {
-	upstreams := make([]Upstream, 0, len(cfgs))
-
-	//nolint:mnd // be configurable in future
-	transport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
-		ForceAttemptHTTP2:   true,
-	}
-
-	for _, cfg := range cfgs {
-		policy := UpstreamPolicy{
-			AllowedStatuses:     cfg.Policy.AllowedStatuses,
-			RequireBody:         cfg.Policy.RequireBody,
-			MapStatusCodes:      cfg.Policy.MapStatusCodes,
-			MaxResponseBodySize: cfg.Policy.MaxResponseBodySize,
-			RetryPolicy: UpstreamRetryPolicy{
-				MaxRetries:      cfg.Policy.RetryConfig.MaxRetries,
-				RetryOnStatuses: cfg.Policy.RetryConfig.RetryOnStatuses,
-				BackoffDelay:    cfg.Policy.RetryConfig.BackoffDelay,
-			},
-		}
-
-		upstream := &httpUpstream{
-			name:                fmt.Sprintf("%s_%s", cfg.Method, cfg.URL),
-			url:                 cfg.URL,
-			method:              cfg.Method,
-			timeout:             cfg.Timeout,
-			headers:             cfg.Headers,
-			forwardHeaders:      cfg.ForwardHeaders,
-			forwardQueryStrings: cfg.ForwardQueryStrings,
-			policy:              policy,
-			client: &http.Client{
-				Transport: transport,
-			},
-		}
-
-		upstreams = append(upstreams, upstream)
-	}
-
-	return upstreams
-}
-
-func initPlugins(cfgs []PluginConfig, log *zap.Logger) []Plugin {
-	plugins := make([]Plugin, 0, len(cfgs))
-
-	for _, cfg := range cfgs {
-		cfn := func(plugin Plugin) bool {
-			return plugin.Name() == cfg.Name
-		}
-
-		if slices.ContainsFunc(plugins, cfn) {
-			continue
-		}
-
-		soPlugin := loadPluginFromSO(cfg.Path, cfg.Config, log)
-		if soPlugin == nil {
-			log.Error(
-				"cannot load plugin from .so",
-				zap.String("name", cfg.Name),
-				zap.String("path", cfg.Path),
-			)
-			continue
-		}
-
-		log.Info(
-			"plugin initialized",
-			zap.String("name", soPlugin.Name()),
-		)
-
-		plugins = append(plugins, soPlugin)
-	}
-
-	return plugins
 }
 
 // ServeHTTP handles incoming HTTP requests through the full router pipeline.

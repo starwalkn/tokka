@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/starwalkn/tokka/internal/circuitbreaker"
 )
 
 type httpUpstream struct {
@@ -21,7 +23,8 @@ type httpUpstream struct {
 	forwardQueryStrings []string
 	policy              UpstreamPolicy
 
-	client *http.Client
+	client         *http.Client
+	circuitBreaker *circuitbreaker.CircuitBreaker
 }
 
 func (u *httpUpstream) Name() string {
@@ -126,9 +129,28 @@ func (u *httpUpstream) Call(ctx context.Context, original *http.Request, origina
 
 			return resp
 		default:
+			if u.circuitBreaker != nil {
+				if allow := u.circuitBreaker.Allow(); !allow {
+					return &UpstreamResponse{
+						Err: &UpstreamError{
+							Kind: UpstreamCircuitOpen,
+							Err:  errors.New("upstream circuit breaker is open"),
+						},
+					}
+				}
+			}
+
 			resp = u.call(ctx, original, originalBody)
 			if resp.Err == nil && !slices.Contains(retryPolicy.RetryOnStatuses, resp.Status) {
 				break
+			}
+
+			if u.circuitBreaker != nil {
+				if resp.Err != nil && u.isBreakerFailure(resp.Err) {
+					u.circuitBreaker.OnFailure()
+				} else {
+					u.circuitBreaker.OnSuccess()
+				}
 			}
 
 			if retryPolicy.BackoffDelay > 0 {
@@ -142,8 +164,6 @@ func (u *httpUpstream) Call(ctx context.Context, original *http.Request, origina
 
 					return resp
 				}
-
-				time.Sleep(retryPolicy.BackoffDelay)
 			}
 		}
 	}
@@ -229,4 +249,21 @@ func (u *httpUpstream) resolveHeaders(target, original *http.Request) {
 
 	// Always forward the Content-Type header.
 	target.Header.Set("Content-Type", original.Header.Get("Content-Type"))
+}
+
+func (u *httpUpstream) isBreakerFailure(uerr *UpstreamError) bool {
+	if uerr == nil || uerr.Err == nil {
+		return false
+	}
+
+	if errors.Is(uerr.Err, context.Canceled) || errors.Is(uerr.Err, context.DeadlineExceeded) {
+		return false
+	}
+
+	switch uerr.Kind {
+	case UpstreamTimeout, UpstreamConnection, UpstreamBadStatus:
+		return true
+	default:
+		return false
+	}
 }

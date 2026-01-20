@@ -77,13 +77,20 @@ type UpstreamPolicyConfig struct {
 	MapStatusCodes      map[int]int `json:"map_status_codes" yaml:"map_status_codes" toml:"map_status_codes"`
 	MaxResponseBodySize int64       `json:"max_response_body_size" yaml:"max_response_body_size" toml:"max_response_body_size"`
 
-	RetryConfig UpstreamRetryPolicyConfig `json:"retry" yaml:"retry" toml:"retry"`
+	RetryConfig          UpstreamRetryConfig          `json:"retry" yaml:"retry" toml:"retry"`
+	CircuitBreakerConfig UpstreamCircuitBreakerConfig `json:"circuit_breaker" yaml:"circuit_breaker" toml:"circuit_breaker"`
 }
 
-type UpstreamRetryPolicyConfig struct {
+type UpstreamRetryConfig struct {
 	MaxRetries      int           `json:"max_retries" yaml:"max_retries" toml:"max_retries"`
 	RetryOnStatuses []int         `json:"retry_on_statuses" yaml:"retry_on_statuses" toml:"retry_on_statuses"`
 	BackoffDelay    time.Duration `json:"backoff_delay" yaml:"backoff_delay" toml:"backoff_delay"`
+}
+
+type UpstreamCircuitBreakerConfig struct {
+	Enabled      bool          `json:"enabled" yaml:"enabled" toml:"enabled"`
+	MaxFailures  int           `json:"max_failures" yaml:"max_failures" toml:"max_failures"`
+	ResetTimeout time.Duration `json:"reset_timeout" yaml:"reset_timeout" toml:"reset_timeout"`
 }
 
 type PluginConfig struct {

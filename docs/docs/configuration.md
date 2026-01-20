@@ -230,7 +230,7 @@ debug: false
 
 server:
   port: 7805
-  timeout: 5000
+  timeout: 20s
   metrics:
     enabled: true
     provider: victoriametrics
@@ -238,7 +238,7 @@ server:
 dashboard:
   enable: true
   port: 7806
-  timeout: 5000
+  timeout: 30s
 
 features:
   - name: ratelimit
@@ -272,14 +272,16 @@ middlewares:
 routes:
   - path: /api/users
     method: GET
+    aggregation:
+      strategy: merge
+      allow_partial_results: true
+    max_parallel_upstreams: 1
     upstreams:
       - url: http://user-service.local/v1/users
         method: GET
-        timeout: 3000
-        forward_query_strings:
-          - "*"
-        forward_headers:
-          - "X-*"
+        timeout: 3s
+        forward_query_strings: ["*"]
+        forward_headers: ["X-*"]
         policy:
           allowed_statuses: [200, 404]
           require_body: true
@@ -290,18 +292,25 @@ routes:
             max_retries: 3
             retry_on_statuses: [500, 502, 503]
             backoff_delay: 1s
-
+          circuit_breaker:
+            enabled: true
+            max_failures: 5
+            reset_timeout: 2s
       - url: http://profile-service.local/v1/details
         method: GET
-        forward_headers:
-          - "X-Request-ID"
-    aggregation:
-      strategy: merge
-      allow_partial_results: true
-    max_parallel_upstreams: 1
+        forward_headers: ["X-Request-ID"]
+        policy:
+          circuit_breaker:
+            enabled: true
+            max_failures: 5
+            reset_timeout: 2s
 
   - path: /api/domains
     method: GET
+    aggregation:
+      strategy: merge
+      allow_partial_results: false
+    max_parallel_upstreams: 3
     middlewares:
       - name: logger
         path: /tokka/middlewares/logger.so
@@ -311,26 +320,30 @@ routes:
     upstreams:
       - url: http://domain-service.local/v1/domains
         method: GET
-        timeout: 3000
-        forward_query_strings:
-          - "*"
-        forward_headers:
-          - "X-For*"
-
+        timeout: 3s
+        forward_query_strings: ["*"]
+        forward_headers: ["X-For*"]
+        policy:
+          circuit_breaker:
+            enabled: true
+            max_failures: 5
+            reset_timeout: 2s
       - url: http://profile-service.local/v1/details
         method: GET
-        timeout: 2000
-        forward_query_strings:
-          - "id"
-        forward_headers:
-          - "X-For"
-    aggregation:
-      strategy: merge
-      allow_partial_results: false
-    max_parallel_upstreams: 3
+        timeout: 2s
+        forward_query_strings: ["id"]
+        forward_headers: ["X-For"]
+        policy:
+          circuit_breaker:
+            enabled: true
+            max_failures: 5
+            reset_timeout: 2s
 
   - path: /api/domains
     method: POST
+    aggregation:
+      strategy: array
+      allow_partial_results: false
     middlewares:
       - name: compressor
         path: /tokka/middlewares/compressor.so
@@ -338,20 +351,18 @@ routes:
         config:
           enabled: true
           alg: gzip
-    plugins: []
     upstreams:
       - url: http://domain-service.local/v1/domains
         method: POST
-        timeout: 1000
-
+        timeout: 1s
       - url: http://profile-service.local/v1/details
         method: GET
-    aggregation:
-      strategy: array
-      allow_partial_results: false
 
   - path: /api/domains
     method: DELETE
+    aggregation:
+      strategy: array
+      allow_partial_results: false
     middlewares:
       - name: compressor
         path: /tokka/middlewares/compressor.so
@@ -359,25 +370,18 @@ routes:
         config:
           enabled: true
           alg: deflate
-
       - name: recoverer
         path: /tokka/middlewares/recoverer.so
         can_fail_on_load: true
         override: true
         config:
           enabled: false
-    plugins: []
     upstreams:
       - url: http://domain-service.local/v1/domains
         method: DELETE
-        timeout: 2000
-
+        timeout: 2s
       - url: http://profile-service.local/v1/details
         method: GET
-    aggregation:
-      strategy: array
-      allow_partial_results: false
-
 ```
   </TabItem>
 
@@ -390,7 +394,7 @@ routes:
   "debug": false,
   "server": {
     "port": 7805,
-    "timeout": 5000,
+    "timeout": "20s",
     "metrics": {
       "enabled": true,
       "provider": "victoriametrics"
@@ -399,7 +403,7 @@ routes:
   "dashboard": {
     "enable": true,
     "port": 7806,
-    "timeout": 5000
+    "timeout": "30s"
   },
   "features": [
     {
@@ -444,42 +448,57 @@ routes:
     {
       "path": "/api/users",
       "method": "GET",
+      "aggregation": {
+        "strategy": "merge",
+        "allow_partial_results": true
+      },
+      "max_parallel_upstreams": 1,
       "upstreams": [
         {
           "url": "http://user-service.local/v1/users",
           "method": "GET",
-          "timeout": 3000,
+          "timeout": "3s",
           "forward_query_strings": ["*"],
           "forward_headers": ["X-*"],
           "policy": {
             "allowed_statuses": [200, 404],
             "require_body": true,
-            "map_status_codes": {
-              "403": 404
-            },
+            "map_status_codes": {"403": 404},
             "max_response_body_size": 4096,
             "retry": {
               "max_retries": 3,
               "retry_on_statuses": [500, 502, 503],
               "backoff_delay": "1s"
+            },
+            "circuit_breaker": {
+              "enabled": true,
+              "max_failures": 5,
+              "reset_timeout": "2s"
             }
           }
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET",
-          "forward_headers": ["X-Request-ID"]
+          "forward_headers": ["X-Request-ID"],
+          "policy": {
+            "circuit_breaker": {
+              "enabled": true,
+              "max_failures": 5,
+              "reset_timeout": "2s"
+            }
+          }
         }
-      ],
-      "aggregation": {
-        "strategy": "merge",
-        "allow_partial_results": true
-      },
-      "max_parallel_upstreams": 1
+      ]
     },
     {
       "path": "/api/domains",
       "method": "GET",
+      "aggregation": {
+        "strategy": "merge",
+        "allow_partial_results": false
+      },
+      "max_parallel_upstreams": 3,
       "middlewares": [
         {
           "name": "logger",
@@ -494,27 +513,40 @@ routes:
         {
           "url": "http://domain-service.local/v1/domains",
           "method": "GET",
-          "timeout": 3000,
+          "timeout": "3s",
           "forward_query_strings": ["*"],
-          "forward_headers": ["X-For*"]
+          "forward_headers": ["X-For*"],
+          "policy": {
+            "circuit_breaker": {
+              "enabled": true,
+              "max_failures": 5,
+              "reset_timeout": "2s"
+            }
+          }
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET",
-          "timeout": 2000,
+          "timeout": "2s",
           "forward_query_strings": ["id"],
-          "forward_headers": ["X-For"]
+          "forward_headers": ["X-For"],
+          "policy": {
+            "circuit_breaker": {
+              "enabled": true,
+              "max_failures": 5,
+              "reset_timeout": "2s"
+            }
+          }
         }
-      ],
-      "aggregation": {
-        "strategy": "merge",
-        "allow_partial_results": false
-      },
-      "max_parallel_upstreams": 3
+      ]
     },
     {
       "path": "/api/domains",
       "method": "POST",
+      "aggregation": {
+        "strategy": "array",
+        "allow_partial_results": false
+      },
       "middlewares": [
         {
           "name": "compressor",
@@ -526,26 +558,25 @@ routes:
           }
         }
       ],
-      "plugins": [],
       "upstreams": [
         {
           "url": "http://domain-service.local/v1/domains",
           "method": "POST",
-          "timeout": 1000
+          "timeout": "1s"
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET"
         }
-      ],
-      "aggregation": {
-        "strategy": "array",
-        "allow_partial_results": false
-      }
+      ]
     },
     {
       "path": "/api/domains",
       "method": "DELETE",
+      "aggregation": {
+        "strategy": "array",
+        "allow_partial_results": false
+      },
       "middlewares": [
         {
           "name": "compressor",
@@ -566,22 +597,17 @@ routes:
           }
         }
       ],
-      "plugins": [],
       "upstreams": [
         {
           "url": "http://domain-service.local/v1/domains",
           "method": "DELETE",
-          "timeout": 2000
+          "timeout": "2s"
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET"
         }
-      ],
-      "aggregation": {
-        "strategy": "array",
-        "allow_partial_results": false
-      }
+      ]
     }
   ]
 }
@@ -597,7 +623,7 @@ debug = false
 
 [server]
 port = 7805
-timeout = 5000
+timeout = "20s"
 
 [server.metrics]
 enabled = true
@@ -606,11 +632,10 @@ provider = "victoriametrics"
 [dashboard]
 enable = true
 port = 7806
-timeout = 5000
+timeout = "30s"
 
 [[features]]
 name = "ratelimit"
-
 [features.config]
 limit = 10
 window = 1
@@ -619,7 +644,6 @@ window = 1
 name = "recoverer"
 path = "/tokka/middlewares/recoverer.so"
 can_fail_on_load = false
-
 [middlewares.config]
 enabled = true
 
@@ -627,7 +651,6 @@ enabled = true
 name = "logger"
 path = "/tokka/middlewares/logger.so"
 can_fail_on_load = false
-
 [middlewares.config]
 enabled = true
 
@@ -635,7 +658,6 @@ enabled = true
 name = "auth"
 path = "/tokka/middlewares/auth.so"
 can_fail_on_load = false
-
 [middlewares.config]
 enabled = true
 issuer = "fake_issuer"
@@ -647,7 +669,6 @@ hmac_secret = "fake_hmac_secret"
 path = "/api/users"
 method = "GET"
 max_parallel_upstreams = 1
-
 [routes.aggregation]
 strategy = "merge"
 allow_partial_results = true
@@ -655,33 +676,37 @@ allow_partial_results = true
 [[routes.upstreams]]
 url = "http://user-service.local/v1/users"
 method = "GET"
-timeout = 3000
+timeout = "3s"
 forward_query_strings = ["*"]
 forward_headers = ["X-*"]
-
 [routes.upstreams.policy]
 allowed_statuses = [200, 404]
 require_body = true
 max_response_body_size = 4096
-
 [routes.upstreams.policy.map_status_codes]
-403 = 404
-
+"403" = 404
 [routes.upstreams.policy.retry]
 max_retries = 3
 retry_on_statuses = [500, 502, 503]
 backoff_delay = "1s"
+[routes.upstreams.policy.circuit_breaker]
+enabled = true
+max_failures = 5
+reset_timeout = "2s"
 
 [[routes.upstreams]]
 url = "http://profile-service.local/v1/details"
 method = "GET"
 forward_headers = ["X-Request-ID"]
+[routes.upstreams.policy.circuit_breaker]
+enabled = true
+max_failures = 5
+reset_timeout = "2s"
 
 [[routes]]
 path = "/api/domains"
 method = "GET"
 max_parallel_upstreams = 3
-
 [routes.aggregation]
 strategy = "merge"
 allow_partial_results = false
@@ -690,28 +715,34 @@ allow_partial_results = false
 name = "logger"
 path = "/tokka/middlewares/logger.so"
 override = true
-
 [routes.middlewares.config]
 enabled = false
 
 [[routes.upstreams]]
 url = "http://domain-service.local/v1/domains"
 method = "GET"
-timeout = 3000
+timeout = "3s"
 forward_query_strings = ["*"]
 forward_headers = ["X-For*"]
+[routes.upstreams.policy.circuit_breaker]
+enabled = true
+max_failures = 5
+reset_timeout = "2s"
 
 [[routes.upstreams]]
 url = "http://profile-service.local/v1/details"
 method = "GET"
-timeout = 2000
+timeout = "2s"
 forward_query_strings = ["id"]
 forward_headers = ["X-For"]
+[routes.upstreams.policy.circuit_breaker]
+enabled = true
+max_failures = 5
+reset_timeout = "2s"
 
 [[routes]]
 path = "/api/domains"
 method = "POST"
-
 [routes.aggregation]
 strategy = "array"
 allow_partial_results = false
@@ -720,7 +751,6 @@ allow_partial_results = false
 name = "compressor"
 path = "/tokka/middlewares/compressor.so"
 can_fail_on_load = false
-
 [routes.middlewares.config]
 enabled = true
 alg = "gzip"
@@ -728,7 +758,7 @@ alg = "gzip"
 [[routes.upstreams]]
 url = "http://domain-service.local/v1/domains"
 method = "POST"
-timeout = 1000
+timeout = "1s"
 
 [[routes.upstreams]]
 url = "http://profile-service.local/v1/details"
@@ -737,7 +767,6 @@ method = "GET"
 [[routes]]
 path = "/api/domains"
 method = "DELETE"
-
 [routes.aggregation]
 strategy = "array"
 allow_partial_results = false
@@ -746,7 +775,6 @@ allow_partial_results = false
 name = "compressor"
 path = "/tokka/middlewares/compressor.so"
 can_fail_on_load = false
-
 [routes.middlewares.config]
 enabled = true
 alg = "deflate"
@@ -756,18 +784,18 @@ name = "recoverer"
 path = "/tokka/middlewares/recoverer.so"
 can_fail_on_load = true
 override = true
-
 [routes.middlewares.config]
 enabled = false
 
 [[routes.upstreams]]
 url = "http://domain-service.local/v1/domains"
 method = "DELETE"
-timeout = 2000
+timeout = "2s"
 
 [[routes.upstreams]]
 url = "http://profile-service.local/v1/details"
 method = "GET"
+
 ```
   </TabItem>
 </Tabs>

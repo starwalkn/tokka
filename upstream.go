@@ -18,12 +18,19 @@ type UpstreamPolicy struct {
 	MapStatusCodes      map[int]int
 	MaxResponseBodySize int64
 	RetryPolicy         UpstreamRetryPolicy
+	CircuitBreaker      UpstreamCircuitBreaker
 }
 
 type UpstreamRetryPolicy struct {
 	MaxRetries      int
 	RetryOnStatuses []int
 	BackoffDelay    time.Duration
+}
+
+type UpstreamCircuitBreaker struct {
+	Enabled      bool
+	MaxFailures  int
+	ResetTimeout time.Duration
 }
 
 type UpstreamResponse struct {
@@ -58,5 +65,6 @@ const (
 	UpstreamBadStatus    UpstreamErrorKind = "bad_status"
 	UpstreamReadError    UpstreamErrorKind = "read_error"
 	UpstreamBodyTooLarge UpstreamErrorKind = "body_too_large"
+	UpstreamCircuitOpen  UpstreamErrorKind = "circuit_open"
 	UpstreamInternal     UpstreamErrorKind = "internal"
 )

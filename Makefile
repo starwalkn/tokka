@@ -5,7 +5,7 @@ MIDDLEWARE_OUT=build/middlewares
 
 .PHONY: all build plugins clean lint test
 
-all: build plugins
+all: clean build plugins
 
 build:
 	mkdir -p .bin

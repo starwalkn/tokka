@@ -5,7 +5,7 @@
   "debug": false,
   "server": {
     "port": 7805,
-    "timeout": 5000,
+    "timeout": "20s",
     "metrics": {
       "enabled": true,
       "provider": "victoriametrics"
@@ -14,7 +14,7 @@
   "dashboard": {
     "enable": true,
     "port": 7806,
-    "timeout": 5000
+    "timeout": "30s"
   },
   "features": [
     {
@@ -59,42 +59,57 @@
     {
       "path": "/api/users",
       "method": "GET",
+      "aggregation": {
+        "strategy": "merge",
+        "allow_partial_results": true
+      },
+      "max_parallel_upstreams": 1,
       "upstreams": [
         {
           "url": "http://user-service.local/v1/users",
           "method": "GET",
-          "timeout": 3000,
+          "timeout": "3s",
           "forward_query_strings": ["*"],
           "forward_headers": ["X-*"],
           "policy": {
             "allowed_statuses": [200, 404],
             "require_body": true,
-            "map_status_codes": {
-              "403": 404
-            },
+            "map_status_codes": {"403": 404},
             "max_response_body_size": 4096,
             "retry": {
               "max_retries": 3,
               "retry_on_statuses": [500, 502, 503],
               "backoff_delay": "1s"
+            },
+            "circuit_breaker": {
+              "enabled": true,
+              "max_failures": 5,
+              "reset_timeout": "2s"
             }
           }
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET",
-          "forward_headers": ["X-Request-ID"]
+          "forward_headers": ["X-Request-ID"],
+          "policy": {
+            "circuit_breaker": {
+              "enabled": true,
+              "max_failures": 5,
+              "reset_timeout": "2s"
+            }
+          }
         }
-      ],
-      "aggregation": {
-        "strategy": "merge",
-        "allow_partial_results": true
-      },
-      "max_parallel_upstreams": 1
+      ]
     },
     {
       "path": "/api/domains",
       "method": "GET",
+      "aggregation": {
+        "strategy": "merge",
+        "allow_partial_results": false
+      },
+      "max_parallel_upstreams": 3,
       "middlewares": [
         {
           "name": "logger",
@@ -109,27 +124,40 @@
         {
           "url": "http://domain-service.local/v1/domains",
           "method": "GET",
-          "timeout": 3000,
+          "timeout": "3s",
           "forward_query_strings": ["*"],
-          "forward_headers": ["X-For*"]
+          "forward_headers": ["X-For*"],
+          "policy": {
+            "circuit_breaker": {
+              "enabled": true,
+              "max_failures": 5,
+              "reset_timeout": "2s"
+            }
+          }
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET",
-          "timeout": 2000,
+          "timeout": "2s",
           "forward_query_strings": ["id"],
-          "forward_headers": ["X-For"]
+          "forward_headers": ["X-For"],
+          "policy": {
+            "circuit_breaker": {
+              "enabled": true,
+              "max_failures": 5,
+              "reset_timeout": "2s"
+            }
+          }
         }
-      ],
-      "aggregation": {
-        "strategy": "merge",
-        "allow_partial_results": false
-      },
-      "max_parallel_upstreams": 3
+      ]
     },
     {
       "path": "/api/domains",
       "method": "POST",
+      "aggregation": {
+        "strategy": "array",
+        "allow_partial_results": false
+      },
       "middlewares": [
         {
           "name": "compressor",
@@ -141,26 +169,25 @@
           }
         }
       ],
-      "plugins": [],
       "upstreams": [
         {
           "url": "http://domain-service.local/v1/domains",
           "method": "POST",
-          "timeout": 1000
+          "timeout": "1s"
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET"
         }
-      ],
-      "aggregation": {
-        "strategy": "array",
-        "allow_partial_results": false
-      }
+      ]
     },
     {
       "path": "/api/domains",
       "method": "DELETE",
+      "aggregation": {
+        "strategy": "array",
+        "allow_partial_results": false
+      },
       "middlewares": [
         {
           "name": "compressor",
@@ -181,22 +208,17 @@
           }
         }
       ],
-      "plugins": [],
       "upstreams": [
         {
           "url": "http://domain-service.local/v1/domains",
           "method": "DELETE",
-          "timeout": 2000
+          "timeout": "2s"
         },
         {
           "url": "http://profile-service.local/v1/details",
           "method": "GET"
         }
-      ],
-      "aggregation": {
-        "strategy": "array",
-        "allow_partial_results": false
-      }
+      ]
     }
   ]
 }
